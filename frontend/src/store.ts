@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { api } from '@/lib/api'
 import { t, type TKey } from '@/lib/i18n'
+import { isPhone } from '@/lib/utils'
 import type { AppNotification, Channel, LabDetail, LabSummary, Layer, Message, QuestBoard, Route, User } from '@/types'
 
 type CameraAction = { type: 'rotate'; value: number } | { type: 'zoom'; value: number } | { type: 'reset' } | { type: 'focus'; id: string }
@@ -95,7 +96,7 @@ export const useLab = create<State>((set, get) => ({
   scanOpen: false,
   onboardingOpen: !ls.get('smartlab.onboarded', false) && !location.search.includes('tour=0'),
   layer: 'infra',
-  showLabels: true,
+  showLabels: typeof window === 'undefined' || window.innerWidth >= 640, // pin labels crowd a phone screen
   highlightId: null,
   route: null,
   cameraCmd: null,
@@ -199,13 +200,19 @@ export const useLab = create<State>((set, get) => ({
 
   set: (p) => {
     if ('onboardingOpen' in p && p.onboardingOpen === false) ls.set('smartlab.onboarded', true)
+    // On a phone the chat and the side panel are both full-width, so only one may be open at a time.
+    if (isPhone()) {
+      if (p.chatOpen) p = { ...p, sideOpen: false }
+      else if (p.sideOpen) p = { ...p, chatOpen: false }
+    }
     set(p)
   },
 
   camera: (cmd) => set({ cameraCmd: { ...cmd, n: ++nonce } }),
 
   focus: (id, open = false) => {
-    set({ highlightId: id, ...(open ? { equipmentId: id } : {}) })
+    // A full-width panel would hide the thing we are about to fly the camera to.
+    set({ highlightId: id, ...(open ? { equipmentId: id } : {}), ...(isPhone() ? { chatOpen: false, sideOpen: false } : {}) })
     get().camera({ type: 'focus', id })
   },
 

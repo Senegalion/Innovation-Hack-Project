@@ -11,7 +11,7 @@ import {
 import { Switch } from '@/components/ui/switch'
 import { api } from '@/lib/api'
 import { tx, useLang, useT, type TKey } from '@/lib/i18n'
-import { cn, fmtDate, fmtTime } from '@/lib/utils'
+import { cn, fmtDate, fmtTime, isPhone } from '@/lib/utils'
 import { useLab } from '@/store'
 import type { AppNotification, Layer } from '@/types'
 
@@ -103,14 +103,16 @@ function Header() {
   const s = useLab()
   const t = useT()
   const me = s.me()
+  const { lang, setLang } = useLang()
   const unread = Object.values(s.unread).reduce((a, b) => a + b, 0)
   const lab = s.lab
   const openQuests = s.quests ? s.quests.mine.length : 0
 
   return (
-    <header className="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-start justify-between gap-3 p-3 sm:p-4">
+    // Phones: row 1 = chat/notifications + quests/menu, row 2 = lab title. From `sm` up it is a single row.
+    <header className="pointer-events-none absolute inset-x-0 top-0 z-20 flex flex-wrap items-start justify-between gap-x-3 gap-y-1 p-3 sm:flex-nowrap sm:p-4">
       <div className="pointer-events-auto flex items-center gap-2">
-        <div className="hidden h-12 items-center gap-2 rounded-full border border-line bg-surface/90 px-4 backdrop-blur md:flex">
+        <div className="hidden h-12 items-center gap-2 rounded-full border border-line bg-surface/90 px-4 backdrop-blur lg:flex">
           <FlaskConical className="size-5 text-accent" />
           <span className="font-display text-sm font-bold tracking-wide">SMARTLAB</span>
         </div>
@@ -132,16 +134,16 @@ function Header() {
         <NotificationsMenu />
       </div>
 
-      <div className="pointer-events-auto flex min-w-0 flex-col items-center">
+      <div className={cn('pointer-events-auto flex min-w-0 flex-col items-center max-sm:order-last max-sm:w-full', (s.sideOpen || s.chatOpen) && 'max-sm:hidden')}>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <button className="group flex max-w-full cursor-pointer items-center gap-2.5 rounded-xl border border-transparent px-3 py-1.5 outline-none transition-colors hover:border-line hover:bg-elev/80 data-[state=open]:border-line data-[state=open]:bg-elev/80">
+            <button className="group flex max-w-full cursor-pointer items-center gap-2.5 rounded-xl border border-transparent px-3 py-1.5 outline-none transition-colors hover:border-line hover:bg-elev/80 data-[state=open]:border-line data-[state=open]:bg-elev/80 max-sm:bg-surface/80 max-sm:backdrop-blur">
               <StatusDot status={lab && s.labs.find((l) => l.id === lab.id)?.alerts ? 'alert' : 'ok'} />
               <h1 className="truncate text-lg font-semibold sm:text-xl">{lab?.name ?? t('common.loading')}</h1>
               <ChevronDown className="size-4 text-dim transition-transform duration-200 group-data-[state=open]:rotate-180" />
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent className="w-[320px]" align="center">
+          <DropdownMenuContent className="w-[min(320px,92vw)]" align="center">
             <DropdownMenuLabel>{t('header.selectLab')}</DropdownMenuLabel>
             {s.labs.map((l) => (
               <DropdownMenuItem key={l.id} onSelect={() => s.selectLab(l.id)} className={cn(l.id === s.labId && 'bg-accent/10')}>
@@ -160,7 +162,7 @@ function Header() {
           </DropdownMenuContent>
         </DropdownMenu>
         {lab && (
-          <p className="hidden text-xs text-dim sm:block">
+          <p className="hidden text-xs text-dim lg:block">
             {lab.building ? `${lab.building} · ` : ''}{t('header.manager')}: {lab.manager} ·{' '}
             {(() => {
               const n = lab.equipment.filter((e) => e.status === 'alert').length
@@ -171,7 +173,7 @@ function Header() {
       </div>
 
       <div className="pointer-events-auto flex items-center gap-2">
-        <LanguageSwitch />
+        <div className="hidden sm:block"><LanguageSwitch /></div>
         <Button variant="outline" size="icon" className="hidden sm:inline-flex" onClick={() => s.set({ scanOpen: true })} aria-label={t('header.scan')}>
           <QrCode className="size-5!" />
         </Button>
@@ -179,7 +181,7 @@ function Header() {
           <TriangleAlert className="size-5!" />
         </Button>
         {me && me.access !== 'worker' && (
-          <Button variant="outline" size="icon" onClick={() => s.set({ adminOpen: true })} aria-label={t('header.admin')}>
+          <Button variant="outline" size="icon" className="hidden sm:inline-flex" onClick={() => s.set({ adminOpen: true })} aria-label={t('header.admin')}>
             <LayoutDashboard className="size-5!" />
           </Button>
         )}
@@ -205,7 +207,21 @@ function Header() {
               <Settings2 className="size-4 text-dim" />
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-72">
+          <DropdownMenuContent align="end" className="w-[min(18rem,92vw)]">
+            {/* Phones: the language switch and the admin button live in this menu instead of the crowded header. */}
+            <div className="sm:hidden">
+              <DropdownMenuLabel>{t('header.language')}</DropdownMenuLabel>
+              {([['pl', 'Polski'], ['en', 'English']] as const).map(([code, name]) => (
+                <DropdownMenuItem key={code} onSelect={(e) => { e.preventDefault(); setLang(code) }}>
+                  <span className="flex-1">{name}</span>
+                  {lang === code && <Check className="size-4 text-accent" />}
+                </DropdownMenuItem>
+              ))}
+              {me && me.access !== 'worker' && (
+                <DropdownMenuItem onSelect={() => s.set({ adminOpen: true })}><LayoutDashboard /> {t('header.admin')}</DropdownMenuItem>
+              )}
+              <DropdownMenuSeparator />
+            </div>
             <DropdownMenuLabel>{t('header.signedInAs')}</DropdownMenuLabel>
             {s.users.map((u) => (
               <DropdownMenuItem key={u.id} onSelect={() => s.setMe(u.id)}>
@@ -238,30 +254,38 @@ const LAYERS: Layer[] = ['infra', 'inventory', 'safety', 'social', 'quests']
 function Legend() {
   const { lab, layer, set, chatOpen } = useLab()
   const t = useT()
+  const [open, setOpen] = useState(false) // only used on phones, where the card is collapsed behind a pill
   if (!lab) return null
   const count = (st: string) => lab.equipment.filter((e) => e.status === st && e.kind !== 'bench').length
   return (
-    <div className={cn('pointer-events-auto absolute bottom-4 left-4 z-20 w-56 space-y-3 rounded-2xl border border-line bg-surface/90 p-3.5 backdrop-blur transition-[left]', chatOpen && 'max-sm:hidden sm:left-[396px]')}>
-      <div>
-        <div className="mb-2 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.08em] text-dim"><Layers className="size-3.5" /> {t('layer.title')}</div>
-        <div className="flex flex-wrap gap-1">
-          {LAYERS.map((l) => (
-            <button key={l} onClick={() => set({ layer: l })}
-              className={cn('cursor-pointer rounded-md border px-2 py-1 text-xs transition-colors',
-                layer === l ? 'border-accent/60 bg-accent/10 text-accent' : 'border-line text-dim hover:text-fg')}>
-              {t(`layer.${l}`)}
-            </button>
+    // Below `lg` the search bar owns the bottom edge, so the legend sits just above it.
+    <div className={cn('pointer-events-auto absolute bottom-4 left-4 z-20 flex flex-col-reverse items-start gap-2 transition-[left] max-lg:bottom-[4.75rem]', chatOpen && 'max-sm:hidden sm:left-[396px]')}>
+      <button onClick={() => setOpen(!open)} aria-expanded={open}
+        className={cn('flex h-11 cursor-pointer items-center gap-2 rounded-full border bg-surface/90 px-3.5 text-xs backdrop-blur sm:hidden', open ? 'border-accent/60 text-accent' : 'border-line-strong text-fg')}>
+        <Layers className="size-4" /> {t(`layer.${layer}`)}
+      </button>
+      <div className={cn('w-56 space-y-3 rounded-2xl border border-line bg-surface/90 p-3.5 backdrop-blur', !open && 'max-sm:hidden')}>
+        <div>
+          <div className="mb-2 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.08em] text-dim"><Layers className="size-3.5" /> {t('layer.title')}</div>
+          <div className="flex flex-wrap gap-1">
+            {LAYERS.map((l) => (
+              <button key={l} onClick={() => { set({ layer: l }); if (isPhone()) setOpen(false) }}
+                className={cn('cursor-pointer rounded-md border px-2 py-1 text-xs transition-colors max-sm:px-2.5 max-sm:py-2',
+                  layer === l ? 'border-accent/60 bg-accent/10 text-accent' : 'border-line text-dim hover:text-fg')}>
+                {t(`layer.${l}`)}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="space-y-1.5 border-t border-line pt-3 text-xs">
+          {(['ok', 'maint', 'alert'] as const).map((st) => (
+            <div key={st} className="flex items-center gap-2">
+              <StatusDot status={st} />
+              <span className="flex-1 text-dim">{t(`status.${st}`)}</span>
+              <span className="font-mono text-fg">{count(st)}</span>
+            </div>
           ))}
         </div>
-      </div>
-      <div className="space-y-1.5 border-t border-line pt-3 text-xs">
-        {(['ok', 'maint', 'alert'] as const).map((st) => (
-          <div key={st} className="flex items-center gap-2">
-            <StatusDot status={st} />
-            <span className="flex-1 text-dim">{t(`status.${st}`)}</span>
-            <span className="font-mono text-fg">{count(st)}</span>
-          </div>
-        ))}
       </div>
     </div>
   )
@@ -270,17 +294,18 @@ function Legend() {
 function ViewportControls() {
   const { camera, route, set, sideOpen } = useLab()
   const t = useT()
-  const btn = 'size-10 cursor-pointer flex items-center justify-center rounded-xl text-dim hover:bg-hover hover:text-fg'
+  const btn = 'size-10 cursor-pointer flex items-center justify-center rounded-xl text-dim hover:bg-hover hover:text-fg max-sm:size-11'
   return (
-    <div className={cn('pointer-events-auto absolute bottom-4 right-4 z-20 flex flex-col items-end gap-2 transition-[right]', sideOpen && 'max-sm:hidden sm:right-[416px]')}>
+    <div className={cn('pointer-events-auto absolute bottom-4 right-4 z-20 flex max-w-[calc(100vw-2rem)] flex-col items-end gap-2 transition-[right] max-lg:bottom-[4.75rem]', sideOpen && 'max-sm:hidden sm:right-[416px]')}>
       {route && (
-        <div className="flex items-center gap-3 rounded-xl border border-accent/40 bg-surface/95 px-3 py-2 text-xs backdrop-blur">
+        <div className="flex max-w-full items-center gap-3 rounded-xl border border-accent/40 bg-surface/95 px-3 py-2 text-xs backdrop-blur">
           <span className="text-dim">{t('route.label')}</span>
           <span className="font-mono text-accent">{t('route.summary', { stops: route.order.length, m: route.distance_m, min: route.minutes })}</span>
-          <button onClick={() => set({ route: null })} className="cursor-pointer text-dim hover:text-fg"><X className="size-3.5" /></button>
+          <button onClick={() => set({ route: null })} className="cursor-pointer p-1 text-dim hover:text-fg"><X className="size-3.5" /></button>
         </div>
       )}
-      <div className="flex gap-0.5 rounded-2xl border border-line bg-surface/90 p-1 backdrop-blur">
+      {/* Below lg: stacked vertically so the controls do not collide with the legend. */}
+      <div className="flex gap-0.5 rounded-2xl border border-line bg-surface/90 p-1 backdrop-blur max-lg:flex-col">
         <button className={btn} onClick={() => camera({ type: 'rotate', value: -Math.PI / 4 })} aria-label={t('view.rotateLeft')}><RotateCcw className="size-4" /></button>
         <button className={btn} onClick={() => camera({ type: 'rotate', value: Math.PI / 4 })} aria-label={t('view.rotateRight')}><RotateCw className="size-4" /></button>
         <button className={btn} onClick={() => camera({ type: 'zoom', value: 1.22 })} aria-label={t('view.zoomOut')}><Minus className="size-4" /></button>
@@ -312,7 +337,7 @@ function Assistant() {
     }
   }
   return (
-    <div className={cn('pointer-events-auto absolute bottom-4 left-1/2 z-20 w-[min(440px,calc(100vw-2rem))] -translate-x-1/2 max-md:bottom-24', (chatOpen || sideOpen) && 'max-lg:hidden', sideOpen && !chatOpen && 'lg:left-[calc(50%-200px)]', chatOpen && !sideOpen && 'lg:left-[calc(50%+190px)]', chatOpen && sideOpen && 'max-2xl:hidden')}>
+    <div className={cn('pointer-events-auto absolute bottom-4 left-1/2 z-20 w-[min(440px,calc(100vw-2rem))] -translate-x-1/2', (chatOpen || sideOpen) && 'max-lg:hidden', sideOpen && !chatOpen && 'lg:left-[calc(50%-200px)]', chatOpen && !sideOpen && 'lg:left-[calc(50%+190px)]', chatOpen && sideOpen && 'max-2xl:hidden')}>
       {answer && (
         <div className="mb-2 flex items-start gap-2 rounded-xl border border-line bg-surface/95 p-3 text-sm backdrop-blur">
           <Sparkles className="mt-0.5 size-4 shrink-0 text-accent" />
@@ -323,7 +348,7 @@ function Assistant() {
       <form onSubmit={ask} className="flex items-center gap-2 rounded-full border border-line-strong bg-surface/95 py-1.5 pl-4 pr-1.5 backdrop-blur">
         <Search className="size-4 text-dim" />
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t('assistant.placeholder')}
-          className="flex-1 bg-transparent text-sm placeholder:text-muted focus:outline-none" />
+          className="min-w-0 flex-1 bg-transparent text-sm placeholder:text-muted focus:outline-none" />
         <Button type="submit" size="sm" className="rounded-full" disabled={busy}>{t('common.ask')}</Button>
       </form>
     </div>
@@ -333,7 +358,7 @@ function Assistant() {
 function Toasts() {
   const toasts = useLab((s) => s.toasts)
   return (
-    <div className="pointer-events-none absolute left-1/2 top-24 z-[60] flex w-[min(420px,92vw)] -translate-x-1/2 flex-col gap-2">
+    <div className="pointer-events-none absolute left-1/2 top-28 z-[60] flex w-[min(420px,92vw)] -translate-x-1/2 flex-col gap-2 sm:top-24">
       {toasts.map((t) => (
         <div key={t.id} className={cn('rounded-xl border bg-surface/95 px-4 py-2.5 text-sm shadow-xl backdrop-blur', t.tone === 'accent' ? 'border-accent/50' : 'border-line')}>
           {t.text}

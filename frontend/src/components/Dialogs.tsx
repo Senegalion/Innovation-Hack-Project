@@ -153,7 +153,7 @@ function EquipmentDialog() {
       <DialogContent className="w-[min(760px,96vw)]">
         {!d ? <div className="p-10 text-center text-sm text-dim">{t('common.loading')}</div> : (
           <>
-            <div className="border-b border-line p-5 pr-12">
+            <div className="border-b border-line p-5 pr-14">
               <div className="flex items-center gap-2 text-xs text-dim">
                 <span className="font-mono">{d.id}</span> · {d.category}
               </div>
@@ -274,7 +274,7 @@ function EquipmentDialog() {
                     </div>
                     {isReading && (
                       <div className="flex flex-wrap items-center gap-3">
-                        <Input value={reading} onChange={(e) => setReading(e.target.value)} placeholder={t('eq.readingPlaceholder')} className="w-56" />
+                        <Input value={reading} onChange={(e) => setReading(e.target.value)} placeholder={t('eq.readingPlaceholder')} className="w-56 max-w-full" />
                         <label className="flex items-center gap-2 text-xs text-dim"><Switch checked={within} onCheckedChange={setWithin} /> {t('eq.withinUncertainty', { range: d.uncertainty || '—' })}</label>
                       </div>
                     )}
@@ -368,7 +368,7 @@ function MaterialDialog() {
       <DialogContent className="w-[min(720px,96vw)]">
         {!d || !f ? <div className="p-10 text-center text-sm text-dim">{t('common.loading')}</div> : (
           <div className="overflow-y-auto">
-            <div className="border-b border-line p-5 pr-12">
+            <div className="border-b border-line p-5 pr-14">
               <p className="font-mono text-xs text-dim">{t('mat.cas')} {d.cas} · {t('mat.cat')} {d.catalog_no} · {t('mat.lot')} {d.lot}</p>
               <DialogTitle className="mt-1 font-display text-xl font-semibold">{d.name}</DialogTitle>
               <div className="mt-2 flex flex-wrap gap-1.5">
@@ -420,9 +420,9 @@ function MaterialDialog() {
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   {needsAmount ? (
-                    <Input type="number" step="any" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder={action === 'check' ? t('mat.counted', { unit: d.unit }) : t('mat.amount', { unit: d.unit })} className="w-44" />
+                    <Input type="number" step="any" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder={action === 'check' ? t('mat.counted', { unit: d.unit }) : t('mat.amount', { unit: d.unit })} className="w-44 max-w-full" />
                   ) : (
-                    <Select value={target} onChange={(e) => setTarget(e.target.value)} className="w-64">
+                    <Select value={target} onChange={(e) => setTarget(e.target.value)} className="w-64 max-w-full">
                       <option value="">{t('mat.newLocation')}</option>
                       {storages.filter((e) => e.id !== d.location_id).map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
                     </Select>
@@ -442,7 +442,7 @@ function MaterialDialog() {
                 <div className="divide-y divide-line rounded-lg border border-line text-sm">
                   {d.logs.map((l) => (
                     <div key={l.id} className="flex items-center gap-2 px-3 py-2">
-                      <span className="w-28 font-mono text-[11px] uppercase text-dim">{logLabel(l.kind)}</span>
+                      <span className="w-28 shrink-0 font-mono text-[11px] uppercase text-dim max-sm:w-20">{logLabel(l.kind)}</span>
                       <span className="flex-1">{l.user}{l.note ? ` — ${l.note}` : ''}</span>
                       {!!l.amount && <span className="font-mono text-xs">{['take', 'dispose', 'use_before_expiry'].includes(l.kind) ? '−' : '+'}{l.amount}</span>}
                       <span className="font-mono text-[11px] text-dim">{fmtDate(l.at)}</span>

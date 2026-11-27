@@ -6,6 +6,12 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
+/** True below Tailwind's `sm` breakpoint (640px), i.e. phones in portrait. */
+export const isPhone = () => typeof window !== 'undefined' && window.matchMedia('(max-width: 639px)').matches
+
+/** True when the primary input is a finger rather than a mouse. */
+export const isTouch = () => typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches
+
 export const fmtDate = (iso?: string | null) =>
   iso ? new Date(iso).toLocaleDateString(locale(), { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
 

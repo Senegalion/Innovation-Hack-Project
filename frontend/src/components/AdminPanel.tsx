@@ -54,7 +54,8 @@ function useAction() {
 
 function Section({ title, icon, children, className }: { title: string; icon?: React.ReactNode; children: React.ReactNode; className?: string }) {
   return (
-    <section className={cn('rounded-xl border border-line p-4', className)}>
+    // min-w-0: a grid item otherwise refuses to shrink below its longest unbreakable line and pushes the dialog wider than a phone.
+    <section className={cn('min-w-0 rounded-xl border border-line p-4', className)}>
       <h4 className="mb-3 flex items-center gap-1.5 text-sm font-medium">{icon}{title}</h4>
       {children}
     </section>
@@ -106,9 +107,9 @@ function Overview() {
               </div>
               <p className="text-xs text-dim">{t(`report.cat.${i.category}` as TKey)} · {i.equipment ?? t('common.lab')} · {i.reporter} · {fmtDate(i.at)} {fmtTime(i.at)}</p>
               <div className="flex flex-wrap gap-2">
-                <Input value={res[i.id]?.cause ?? ''} onChange={(e) => setRes({ ...res, [i.id]: { ...(res[i.id] ?? { resolution: '' }), cause: e.target.value } })} placeholder={t('admin.cause')} className="h-8 flex-1 text-xs" />
-                <Input value={res[i.id]?.resolution ?? ''} onChange={(e) => setRes({ ...res, [i.id]: { ...(res[i.id] ?? { cause: '' }), resolution: e.target.value } })} placeholder={t('admin.resolution')} className="h-8 flex-1 text-xs" />
-                <Button size="sm" onClick={() => resolve(i.id)}>{t('admin.resolve')}</Button>
+                <Input value={res[i.id]?.cause ?? ''} onChange={(e) => setRes({ ...res, [i.id]: { ...(res[i.id] ?? { resolution: '' }), cause: e.target.value } })} placeholder={t('admin.cause')} className="h-8 min-w-0 flex-1 text-xs max-sm:basis-full" />
+                <Input value={res[i.id]?.resolution ?? ''} onChange={(e) => setRes({ ...res, [i.id]: { ...(res[i.id] ?? { cause: '' }), resolution: e.target.value } })} placeholder={t('admin.resolution')} className="h-8 min-w-0 flex-1 text-xs max-sm:basis-full" />
+                <Button size="sm" className="max-sm:w-full" onClick={() => resolve(i.id)}>{t('admin.resolve')}</Button>
               </div>
             </div>
           ))}
@@ -239,7 +240,7 @@ function LabsTab() {
   return (
     <div className="grid gap-4 md:grid-cols-2">
       <Section title={t('labs.current', { name: lab.name })} icon={<Building2 className="size-4 text-accent" />} className="md:col-span-2">
-        <div className="grid gap-4 md:grid-cols-[1fr_280px]">
+        <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_280px]">
           <div className="space-y-3 text-sm">
             <p className="text-dim">{t('labs.size', { w: lab.width.toFixed(1), d: lab.depth.toFixed(1) })} · {lab.model_meta ? t('labs.modelLoaded', { name: lab.model_meta.filename ?? 'GLB', n: Object.keys(lab.model_meta.nodes).length }) : t('labs.noModel')}</p>
             <div className="space-y-2 rounded-lg border border-dashed border-line-strong p-3">
@@ -296,8 +297,8 @@ function LabsTab() {
               {r.status === 'done' && (
                 <>
                   <p className="mt-1 text-dim">{t('labs.recSummary', { points: r.result.points ?? 0, matched: r.result.matched ?? 0, unmatched: r.result.unmatched ?? 0 })}</p>
-                  <div className="mt-2 max-h-48 overflow-y-auto rounded border border-line">
-                    <table className="w-full text-left">
+                  <div className="mt-2 max-h-48 overflow-auto rounded border border-line">
+                    <table className="w-full min-w-[480px] text-left">
                       <thead className="text-[10px] uppercase text-dim"><tr><th className="p-1.5">{t('labs.col.label')}</th><th>x,z</th><th>w×d×h</th><th>{t('labs.col.match')}</th><th /></tr></thead>
                       <tbody>
                         {(r.result.instances ?? []).filter((i) => i.label !== 'wall').map((i) => (
@@ -463,7 +464,7 @@ function AssetsEditor() {
   return (
     <Section title={t('labs.assets', { n: lab.equipment.length })} icon={<Box className="size-4 text-accent" />} className="md:col-span-2">
       <div className="max-h-72 overflow-auto rounded-lg border border-line">
-        <table className="w-full text-left text-xs">
+        <table className="w-full min-w-[560px] text-left text-xs">
           <thead className="sticky top-0 bg-surface text-[10px] uppercase text-dim"><tr><th className="p-1.5">ID</th><th>{t('labs.name')}</th><th>{t('labs.kind')}</th><th>x</th><th>z</th><th>w</th><th>d</th><th>h</th><th /></tr></thead>
           <tbody>
             {lab.equipment.map((a) => (
@@ -525,7 +526,7 @@ function PeopleTab() {
     <div className="grid gap-4 md:grid-cols-2">
       <Section title={t('people.users')} icon={<Users className="size-4 text-accent" />} className="md:col-span-2">
         <div className="max-h-80 overflow-auto rounded-lg border border-line">
-          <table className="w-full text-left text-xs">
+          <table className="w-full min-w-[560px] text-left text-xs">
             <thead className="sticky top-0 bg-surface text-[10px] uppercase text-dim"><tr><th className="p-1.5">{t('labs.name')}</th><th>{t('people.role')}</th><th>{t('people.access')}</th><th>{t('people.mentor')}</th><th>{t('people.skills')}</th><th>XP</th></tr></thead>
             <tbody>
               {s.users.map((u) => (
@@ -634,12 +635,12 @@ export default function AdminPanel() {
   return (
     <Dialog open={s.adminOpen} onOpenChange={(o) => s.set({ adminOpen: o })}>
       <DialogContent className="w-[min(1100px,97vw)]">
-        <div className="border-b border-line p-5 pr-12">
-          <DialogTitle className="font-display text-xl font-semibold">{t('admin.title', { lab: s.lab?.name ?? '' })}</DialogTitle>
+        <div className="border-b border-line p-5 pr-14 max-sm:p-4 max-sm:pr-14">
+          <DialogTitle className="font-display text-xl font-semibold max-sm:text-lg">{t('admin.title', { lab: s.lab?.name ?? '' })}</DialogTitle>
           <p className="text-xs text-dim">{t('admin.subtitle')}</p>
         </div>
         <Tabs value={s.adminTab} onValueChange={(v) => s.set({ adminTab: v })} className="flex min-h-0 flex-1 flex-col">
-          <div className="px-5 pt-3">
+          <div className="px-5 pt-3 max-sm:px-4">
             <TabsList className="w-full">
               <TabsTrigger value="overview"><LayoutDashboard /> {t('admin.tab.overview')}</TabsTrigger>
               {isAdmin && <TabsTrigger value="labs"><Building2 /> {t('admin.tab.labs')}</TabsTrigger>}
@@ -647,7 +648,7 @@ export default function AdminPanel() {
               <TabsTrigger value="points"><Trophy /> {t('admin.tab.points')}</TabsTrigger>
             </TabsList>
           </div>
-          <div className="min-h-0 flex-1 overflow-y-auto p-5">
+          <div className="min-h-0 flex-1 overflow-y-auto p-5 max-sm:p-4">
             <TabsContent value="overview"><Overview /></TabsContent>
             {isAdmin && <TabsContent value="labs"><LabsTab /></TabsContent>}
             {isAdmin && <TabsContent value="people"><PeopleTab /></TabsContent>}

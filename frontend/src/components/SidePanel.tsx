@@ -9,7 +9,7 @@ import { Input, Select } from '@/components/ui/input'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { api } from '@/lib/api'
 import { locale, t as tr, tx, useT } from '@/lib/i18n'
-import { cn, daysUntil, fmtDate } from '@/lib/utils'
+import { cn, daysUntil, fmtDate, isPhone } from '@/lib/utils'
 import { useLab } from '@/store'
 import type { DocumentInfo, Knowledge, Material, Quest, Route, SearchHit } from '@/types'
 
@@ -155,7 +155,8 @@ function QuestsTab() {
     if (!quest_ids.length) return s.toast(t('quests.needLocation'))
     const route = await api.post<Route>('/route', { lab_id: s.labId, quest_ids })
     route.unreachable?.forEach((u) => s.toast(t('quests.skipped', { id: u.id, reason: u.reason }), 'plain'))
-    s.set({ route, layer: 'quests' })
+    // On a phone the panel covers the whole map, so close it to show the route that was just planned.
+    s.set({ route, layer: 'quests', ...(isPhone() ? { sideOpen: false } : {}) })
     s.camera({ type: 'reset' })
   }
 
@@ -535,17 +536,21 @@ export default function SidePanel() {
   const t = useT()
   if (!s.sideOpen) return null
   return (
-    <aside className="pointer-events-auto absolute bottom-0 right-0 top-20 z-30 flex w-[min(400px,100vw)] flex-col border-l border-t border-line bg-surface/97 backdrop-blur-md sm:rounded-tl-2xl">
+    <aside className="pointer-events-auto absolute bottom-0 right-0 top-20 z-30 flex w-[min(400px,100%)] flex-col border-l border-t border-line bg-surface/97 backdrop-blur-md sm:rounded-tl-2xl">
       <Tabs value={s.sideTab} onValueChange={(v) => s.set({ sideTab: v })} className="flex min-h-0 flex-1 flex-col">
         <div className="flex items-center gap-2 border-b border-line p-3">
-          <TabsList className="flex-1">
-            <TabsTrigger value="quests"><Sparkles /> {t('tabs.quests')}</TabsTrigger>
-            <TabsTrigger value="projects"><FlaskConical /> {t('tabs.projects')}</TabsTrigger>
-            <TabsTrigger value="inventory"><Package /> {t('tabs.stock')}</TabsTrigger>
-            <TabsTrigger value="knowledge"><BookOpen /> {t('tabs.knowledge')}</TabsTrigger>
-            <TabsTrigger value="me"><Award /> {t('tabs.me')}</TabsTrigger>
+          {/* Five labelled tabs do not fit in a 400px (or phone-width) panel, so only the active tab shows its label. */}
+          <TabsList className="min-w-0 flex-1">
+            {([
+              ['quests', Sparkles, 'tabs.quests'], ['projects', FlaskConical, 'tabs.projects'], ['inventory', Package, 'tabs.stock'],
+              ['knowledge', BookOpen, 'tabs.knowledge'], ['me', Award, 'tabs.me'],
+            ] as const).map(([value, Icon, label]) => (
+              <TabsTrigger key={value} value={value} aria-label={t(label)} title={t(label)} className="max-sm:h-8">
+                <Icon /> <span className={cn(s.sideTab !== value && 'hidden')}>{t(label)}</span>
+              </TabsTrigger>
+            ))}
           </TabsList>
-          <button onClick={() => s.set({ sideOpen: false })} className="cursor-pointer rounded-lg p-1.5 text-dim hover:bg-hover hover:text-fg"><X className="size-4" /></button>
+          <button onClick={() => s.set({ sideOpen: false })} className="cursor-pointer rounded-lg p-1.5 text-dim hover:bg-hover hover:text-fg max-sm:p-2.5"><X className="size-4" /></button>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto p-3">
           <TabsContent value="quests"><QuestsTab /></TabsContent>

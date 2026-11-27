@@ -36,6 +36,31 @@ html, body, #root {
   -webkit-font-smoothing: antialiased;
 }
 
+/* Phones: 100% is taller than the visible area while the browser toolbar is showing, so use dvh. */
+@supports (height: 100dvh) {
+  html, body, #root { height: 100dvh; }
+}
+
+html, body {
+  overscroll-behavior: none;
+  -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Overrides `inset-0` (same specificity, declared later) once safe-area insets exist. */
+.hud-safe {
+  inset: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+}
+
+button, a, [role="tab"], [role="menuitem"], summary, label { touch-action: manipulation; }
+
+@media (pointer: coarse) {
+  /* iOS Safari zooms the page when a focused field is below 16px. */
+  input, select, textarea { font-size: 16px; }
+  /* Comfortable tap targets for menus and small buttons. */
+  [role="menuitem"] { min-height: 44px; }
+}
+
 * { scrollbar-width: thin; scrollbar-color: rgb(255 255 255 / 0.15) transparent; }
 
 h1, h2, h3, h4 { font-family: var(--font-display); letter-spacing: -0.01em; }

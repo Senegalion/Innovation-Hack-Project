@@ -39,7 +39,8 @@ export default function App() {
   return (
     <div className="relative h-full w-full overflow-hidden bg-[radial-gradient(ellipse_at_center,#14191C_0%,#080B0D_75%)]">
       <LabScene />
-      <div className="pointer-events-none absolute inset-0">
+      {/* The 3D canvas stays full-bleed; the HUD is inset so it clears notches and the home indicator. */}
+      <div className="hud-safe pointer-events-none absolute inset-0">
         <Hud />
         <ChatDrawer />
         <SidePanel />

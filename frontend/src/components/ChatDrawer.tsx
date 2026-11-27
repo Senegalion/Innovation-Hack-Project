@@ -132,7 +132,7 @@ export default function ChatDrawer() {
   }
 
   return (
-    <aside className="pointer-events-auto absolute bottom-0 left-0 top-20 z-30 flex w-[min(380px,100vw)] flex-col border-r border-t border-line bg-surface/97 backdrop-blur-md sm:rounded-tr-2xl">
+    <aside className="pointer-events-auto absolute bottom-0 left-0 top-20 z-30 flex w-[min(380px,100%)] flex-col border-r border-t border-line bg-surface/97 backdrop-blur-md sm:rounded-tr-2xl">
       <div className="flex h-14 items-center gap-2 border-b border-line px-4">
         <h2 className="flex-1 text-base font-semibold">{t('chat.title')}</h2>
         <span className="rounded-md border border-line px-1.5 py-0.5 font-mono text-[10px] text-dim">{lab.code}</span>
@@ -141,7 +141,7 @@ export default function ChatDrawer() {
             <Avatar key={u.id} initials={u.initials} online className="size-7 text-[10px]" />
           ))}
         </div>
-        <button onClick={() => s.set({ chatOpen: false })} className="cursor-pointer rounded-lg p-1.5 text-dim hover:bg-hover hover:text-fg"><X className="size-4" /></button>
+        <button onClick={() => s.set({ chatOpen: false })} className="cursor-pointer rounded-lg p-1.5 text-dim hover:bg-hover hover:text-fg max-sm:p-2.5"><X className="size-4" /></button>
       </div>
 
       <div className="flex gap-1.5 overflow-x-auto border-b border-line px-3 py-2">
@@ -248,7 +248,7 @@ export default function ChatDrawer() {
           <form onSubmit={send} className="space-y-2 border-t border-line p-3">
             <div className="flex flex-wrap items-center gap-1.5 text-xs">
               <Paperclip className="size-3.5 text-dim" />
-              <Select value={ref} onChange={(e) => setRef(e.target.value)} className="h-7 flex-1 text-xs">
+              <Select value={ref} onChange={(e) => setRef(e.target.value)} className="h-7 min-w-0 flex-1 text-xs max-sm:h-10 max-sm:basis-[calc(100%-1.75rem)]">
                 <option value="">{t('chat.share')}</option>
                 <optgroup label={t('chat.shareEquipmentGroup')}>
                   {lab.equipment.map((e) => <option key={e.id} value={`machine:${e.id}`}>{e.name}</option>)}
@@ -260,17 +260,17 @@ export default function ChatDrawer() {
                   {lab.samples.map((x) => <option key={x.id} value={`sample:${x.id}`}>{x.id} {x.label}</option>)}
                 </optgroup>
               </Select>
-              <label className={cn('flex cursor-pointer items-center gap-1 rounded-md border border-line px-1.5 py-1 text-[10px] text-dim hover:text-fg', uploading && 'opacity-50')}>
+              <label className={cn('flex cursor-pointer items-center gap-1 rounded-md border border-line px-1.5 py-1 text-[10px] text-dim hover:text-fg max-sm:px-2.5 max-sm:py-2 max-sm:text-xs', uploading && 'opacity-50')}>
                 <ImagePlus className="size-3" /> {t('chat.attach')}
                 <input type="file" className="hidden" disabled={uploading} onChange={(e) => { const f = e.target.files?.[0]; if (f) attach(f); e.target.value = '' }} />
               </label>
               {['@service', '@leader', '@manager'].map((tag) => (
                 <button type="button" key={tag} onClick={() => setText((t) => `${t}${t && !t.endsWith(' ') ? ' ' : ''}${tag} `)}
-                  className="cursor-pointer rounded-md border border-line px-1.5 py-1 font-mono text-[10px] text-dim hover:text-fg">{tag}</button>
+                  className="cursor-pointer rounded-md border border-line px-1.5 py-1 font-mono text-[10px] text-dim hover:text-fg max-sm:px-2.5 max-sm:py-2 max-sm:text-xs">{tag}</button>
               ))}
               {activeChannel?.startsWith('eq:') && (
                 <button type="button" onClick={() => setHelp(!help)}
-                  className={cn('flex cursor-pointer items-center gap-1 rounded-md border px-1.5 py-1 text-[10px]', help ? 'border-accent bg-accent/10 text-accent' : 'border-line text-dim')}>
+                  className={cn('flex cursor-pointer items-center gap-1 rounded-md border px-1.5 py-1 text-[10px] max-sm:px-2.5 max-sm:py-2 max-sm:text-xs', help ?'border-accent bg-accent/10 text-accent' : 'border-line text-dim')}>
                   <HelpCircle className="size-3" /> {t('chat.askHelp')}
                 </button>
               )}
@@ -286,8 +286,8 @@ export default function ChatDrawer() {
               </div>
             )}
             <div className="flex gap-2">
-              <Input value={text} onChange={(e) => setText(e.target.value)} placeholder={t('chat.placeholder')} className="rounded-full" />
-              <button type="submit" className="flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-full bg-accent text-accent-ink hover:bg-accent-hover" aria-label={t('chat.send')}>
+              <Input value={text} onChange={(e) => setText(e.target.value)} placeholder={t('chat.placeholder')} className="rounded-full max-sm:h-11" />
+              <button type="submit" className="flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-full bg-accent text-accent-ink hover:bg-accent-hover max-sm:size-11" aria-label={t('chat.send')}>
                 <ArrowRight className="size-4" />
               </button>
             </div>

@@ -6,9 +6,14 @@ import {
 import React, { Component, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import * as THREE from 'three'
 import { useT } from '@/lib/i18n'
-import { cn } from '@/lib/utils'
+import { cn, isTouch } from '@/lib/utils'
 import { useLab } from '@/store'
 import type { Equipment, LabDetail, Status } from '@/types'
+
+// Phones: a finger jitters more than a mouse (so taps are not mistaken for drags) and the GPU has less to spare.
+const TOUCH = isTouch()
+const TAP_SLOP = TOUCH ? 12 : 5
+const SHADOW_MAP = TOUCH ? 1024 : 2048
 
 const ACCENT = '#3CD0C0'
 const PIN_KINDS = new Set(['instrument', 'hood', 'freezer'])
@@ -94,9 +99,11 @@ function Pin({
     <Anchor id={id} position={position}>
       <button
         onClick={onClick}
-        onPointerEnter={() => setHover(true)}
+        // Touch has no hover: without the pointerType check a tapped pin would keep its label forever.
+        onPointerEnter={(e) => e.pointerType === 'mouse' && setHover(true)}
         onPointerLeave={() => setHover(false)}
-        className="group flex cursor-pointer flex-col items-center gap-1 select-none"
+        // The ::before widens the tap area of the 26px pin to ~42px.
+        className="group relative flex cursor-pointer flex-col items-center gap-1 select-none before:absolute before:-inset-2"
       >
         <span
           className={cn(
@@ -226,7 +233,7 @@ function GlbModel({ lab }: { lab: LabDetail }) {
       position={[-offset[0] - lab.width / 2, -offset[1], -offset[2] - lab.depth / 2]}
       onClick={(ev: ThreeEvent<MouseEvent>) => {
         const id = assetOf(ev.object)
-        if (!id || ev.delta > 5) return
+        if (!id || ev.delta > TAP_SLOP) return
         ev.stopPropagation()
         set({ equipmentId: id, highlightId: id })
       }}
@@ -267,7 +274,7 @@ function EquipmentMesh({ e, all, world }: { e: Equipment; all: Equipment[]; worl
 
   const click = (ev: ThreeEvent<MouseEvent>) => {
     ev.stopPropagation()
-    if (ev.delta > 5) return
+    if (ev.delta > TAP_SLOP) return
     set({ equipmentId: e.id, highlightId: e.id })
   }
   const handlers = {
@@ -601,7 +608,7 @@ function Scene({ lab }: { lab: LabDetail }) {
         position={[8, 14, 10]}
         intensity={1.4}
         castShadow
-        shadow-mapSize={[2048, 2048]}
+        shadow-mapSize={[SHADOW_MAP, SHADOW_MAP]}
         shadow-camera-left={-14}
         shadow-camera-right={14}
         shadow-camera-top={12}
@@ -644,7 +651,7 @@ export default function LabScene() {
   const lab = useLab((s) => s.lab)
   return (
     <div className="absolute inset-0 touch-none">
-      <Canvas shadows dpr={[1, 2]} camera={{ position: DEFAULT_CAM.toArray(), fov: 38, near: 0.1, far: 400 }}>
+      <Canvas shadows dpr={[1, TOUCH ? 1.5 : 2]} camera={{ position: DEFAULT_CAM.toArray(), fov: 38, near: 0.1, far: 400 }}>
         {lab && <Scene key={lab.id} lab={lab} />}
       </Canvas>
       {lab && <Overlay key={lab.id} lab={lab} />}

@@ -4,13 +4,15 @@ import { cn } from '@/lib/utils'
 export const DropdownMenu = DM.Root
 export const DropdownMenuTrigger = DM.Trigger
 
-export function DropdownMenuContent({ className, sideOffset = 8, ...props }: React.ComponentProps<typeof DM.Content>) {
+export function DropdownMenuContent({ className, sideOffset = 8, collisionPadding = 8, ...props }: React.ComponentProps<typeof DM.Content>) {
   return (
     <DM.Portal>
       <DM.Content
         sideOffset={sideOffset}
+        collisionPadding={collisionPadding}
         className={cn(
-          'z-50 min-w-48 rounded-xl border border-line-strong bg-surface/95 p-1.5 text-fg shadow-2xl shadow-black/60 backdrop-blur-md',
+          // Tall menus (user list on a phone) scroll instead of running off the screen.
+          'z-50 max-h-[var(--radix-dropdown-menu-content-available-height)] min-w-48 overflow-y-auto rounded-xl border border-line-strong bg-surface/95 p-1.5 text-fg shadow-2xl shadow-black/60 backdrop-blur-md',
           className,
         )}
         {...props}
