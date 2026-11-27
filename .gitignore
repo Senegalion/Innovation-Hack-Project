@@ -38,3 +38,5 @@ logs/
 # Temporary files
 tmp/
 temp/
+*.db
+backend/data/
