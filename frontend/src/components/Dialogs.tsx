@@ -1,11 +1,14 @@
 import {
-  AlertOctagon, ArrowRight, BookOpen, Camera, Crosshair, History, Info, Leaf, MessageSquare, Navigation, QrCode,
-  ShieldAlert, Sparkles, TriangleAlert, UserRoundSearch,
+  AlertOctagon, ArrowRight, BookOpen, Camera, Crosshair, History, ImagePlus, Info, MessageSquare, Navigation,
+  Printer, QrCode, ShieldAlert, Sparkles, TestTube, TriangleAlert, UserRoundSearch,
 } from 'lucide-react'
 import { QRCodeSVG } from 'qrcode.react'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import AdminPanel from '@/components/AdminPanel'
+import { MessageExtras } from '@/components/ChatDrawer'
 import { Avatar, roleLabel } from '@/components/Hud'
 import { StatusDot } from '@/components/LabScene'
+import { DocumentList, DocumentUpload } from '@/components/SidePanel'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
@@ -13,10 +16,10 @@ import { Input, Select, Textarea } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { api } from '@/lib/api'
-import { t as tr, tx, useLang, useT, type TKey } from '@/lib/i18n'
+import { t as tr, tx, useLang, useT } from '@/lib/i18n'
 import { cn, daysUntil, fmtDate, fmtTime } from '@/lib/utils'
 import { useLab } from '@/store'
-import type { EquipmentDetail, Incident, MaterialDetail, Message, Route } from '@/types'
+import type { EquipmentDetail, LogEntry, MaterialDetail, Message, Onboarding, Procedure, Route, Sample } from '@/types'
 
 const logLabel = (k: string) => tx(`log.${k}`, k)
 
@@ -29,9 +32,23 @@ function Field({ label, value, warn }: { label: string; value?: string | null; w
   )
 }
 
-const soon = (iso: string | null, days: number) => {
+const soon = (iso: string | null | undefined, days: number) => {
   const d = daysUntil(iso)
   return d !== null && d <= days
+}
+
+function Timeline({ logs }: { logs: LogEntry[] }) {
+  return (
+    <ol className="relative space-y-3 border-l border-line pl-4">
+      {logs.map((l) => (
+        <li key={l.id} className="relative">
+          <span className={cn('absolute -left-[21px] top-1.5 size-2.5 rounded-full border-2 border-surface', l.kind === 'issue' ? 'bg-accent' : 'bg-fg/70')} />
+          <p className="font-mono text-[11px] text-dim">{fmtDate(l.at)} {fmtTime(l.at)} · {logLabel(l.kind).toUpperCase()} · {l.user ?? '—'}</p>
+          <p className="text-sm">{l.note || '—'}</p>
+        </li>
+      ))}
+    </ol>
+  )
 }
 
 function Discussion({ equipmentId }: { equipmentId: string }) {
@@ -41,19 +58,20 @@ function Discussion({ equipmentId }: { equipmentId: string }) {
   const [msgs, setMsgs] = useState<Message[]>([])
   const [text, setText] = useState('')
   const [help, setHelp] = useState(false)
+  const [photo, setPhoto] = useState<{ id: number; title: string } | null>(null)
   const load = useCallback(() => api.get<Message[]>(`/messages?channel=${channel}`).then(setMsgs), [channel])
   const live = s.messages[channel]
   useEffect(() => { load() }, [load, live?.length])
   const send = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!text.trim()) return
-    await api.post('/messages', { channel, sender_id: s.meId, text, help_request: help })
-    setText(''); setHelp(false)
+    if (!text.trim() && !photo) return
+    await api.post('/messages', { channel, sender_id: s.meId, text: text || '📷', help_request: help, attachments: photo ? [photo.id] : [] })
+    setText(''); setHelp(false); setPhoto(null)
     load(); s.loadChannels(); s.refreshQuests()
   }
   return (
     <div className="space-y-3">
-      <div className="max-h-64 space-y-2.5 overflow-y-auto">
+      <div className="max-h-72 space-y-2.5 overflow-y-auto">
         {msgs.length === 0 && <p className="py-6 text-center text-sm text-muted">{t('eq.discussionEmpty')}</p>}
         {msgs.map((m) => (
           <div key={m.id} className="flex gap-2">
@@ -61,12 +79,24 @@ function Discussion({ equipmentId }: { equipmentId: string }) {
             <div className="flex-1">
               <p className="text-[11px] text-dim"><span className="font-medium text-fg">{m.sender ?? 'SMARTLAB'}</span> · <span className="font-mono">{fmtDate(m.at)} {fmtTime(m.at)}</span></p>
               <p className="text-sm">{m.help_request ? <Badge variant="accent" className="mr-1">{t('eq.helpTag')}</Badge> : null}{m.text}</p>
+              <MessageExtras m={m} />
             </div>
           </div>
         ))}
       </div>
+      {photo && <p className="text-xs text-dim">📎 {photo.title} <button className="cursor-pointer text-accent" onClick={() => setPhoto(null)}>×</button></p>}
       <form onSubmit={send} className="flex items-center gap-2">
         <Input value={text} onChange={(e) => setText(e.target.value)} placeholder={t('eq.discussionPlaceholder')} />
+        <label className="flex shrink-0 cursor-pointer items-center rounded-lg border border-line p-2 text-dim hover:text-fg" title={t('eq.addPhoto')}>
+          <ImagePlus className="size-4" />
+          <input type="file" accept="image/*" capture="environment" className="hidden" onChange={async (e) => {
+            const f = e.target.files?.[0]
+            if (!f) return
+            const d = await api.upload<{ id: number; title: string }>('/documents', { file: f, lab_id: s.labId, kind: 'image', target_type: 'machine', target_id: equipmentId, process: 'false' })
+            setPhoto(d)
+            e.target.value = ''
+          }} />
+        </label>
         <label className="flex shrink-0 items-center gap-1.5 text-xs text-dim"><Switch checked={help} onCheckedChange={setHelp} /> {t('eq.help')}</label>
         <Button type="submit" size="sm"><ArrowRight /></Button>
       </form>
@@ -82,22 +112,29 @@ function EquipmentDialog() {
   const [kind, setKind] = useState('use')
   const [note, setNote] = useState('')
   const [status, setStatus] = useState('')
+  const [reading, setReading] = useState('')
+  const [within, setWithin] = useState(true)
   const labEq = s.lab?.equipment.find((e) => e.id === id)
   const lang = useLang((x) => x.lang)
   const load = useCallback(() => {
-    if (id) api.get<EquipmentDetail>(`/equipment/${id}?user_id=${s.meId}`).then(setD)
+    if (id) api.get<EquipmentDetail>(`/equipment/${id}?user_id=${s.meId}`).then(setD).catch(() => setD(null))
   }, [id, s.meId, lang])
   useEffect(() => { setD(null); load() }, [load, labEq?.status, labEq?.last_service])
 
+  const isReading = kind === 'check' || kind === 'calibration'
   const addLog = async (e: React.FormEvent) => {
     e.preventDefault()
-    await api.post(`/equipment/${id}/logs`, { user_id: s.meId, kind, note, status: status || null })
-    s.toast(t('eq.logged', { kind: logLabel(kind), name: d?.name ?? '' }))
-    setNote(''); setStatus('')
-    load(); s.refreshLab()
+    await api.post(`/equipment/${id}/logs`, {
+      user_id: s.meId, kind, note, status: status || null,
+      reading: isReading ? reading || null : null, within_uncertainty: isReading ? within : null,
+    })
+    s.toast(isReading && !within ? t('eq.outOfRange') : t('eq.logged', { kind: logLabel(kind), name: d?.name ?? '' }), isReading && !within ? 'accent' : 'plain')
+    setNote(''); setStatus(''); setReading(''); setWithin(true)
+    load(); s.refreshLab(); s.refreshQuests(); s.refreshUsers()
   }
   const route = async () => {
     const r = await api.post<Route>('/route', { lab_id: s.labId, stops: [id] })
+    r.unreachable?.forEach((u) => s.toast(t('quests.skipped', { id: u.id, reason: u.reason }), 'plain'))
     s.set({ route: r, equipmentId: null })
   }
   const pingHelper = async (uid: string, name: string) => {
@@ -108,10 +145,12 @@ function EquipmentDialog() {
     s.toast(t('eq.helpSent', { name }))
     s.loadChannels()
   }
+  const quests = [...(s.quests?.mine ?? []), ...(s.quests?.pool ?? [])].filter((q) => q.target_id === id)
+  const p = d?.prediction
 
   return (
     <Dialog open={!!id} onOpenChange={(o) => !o && s.set({ equipmentId: null })}>
-      <DialogContent className="w-[min(720px,96vw)]">
+      <DialogContent className="w-[min(760px,96vw)]">
         {!d ? <div className="p-10 text-center text-sm text-dim">{t('common.loading')}</div> : (
           <>
             <div className="border-b border-line p-5 pr-12">
@@ -141,6 +180,18 @@ function EquipmentDialog() {
               <div className="min-h-0 flex-1 overflow-y-auto p-5">
                 <TabsContent value="info" className="space-y-4">
                   {d.notes && <div className="rounded-lg border border-accent/30 bg-accent/5 p-3 text-sm">{d.notes}</div>}
+                  {quests.length > 0 && (
+                    <div>
+                      <p className="mb-1.5 text-[10px] uppercase tracking-wider text-dim">{t('eq.assignedQuests')}</p>
+                      <div className="space-y-1">
+                        {quests.map((q) => (
+                          <button key={q.id} onClick={() => s.set({ equipmentId: null, sideOpen: true, sideTab: 'quests' })} className="flex w-full cursor-pointer items-center gap-2 rounded-lg border border-line px-3 py-2 text-left text-sm hover:bg-hover">
+                            <Sparkles className="size-3.5 text-accent" /><span className="flex-1">{q.title}</span><span className="font-mono text-xs text-accent">+{q.xp} XP</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                     <Field label={t('eq.serial')} value={d.serial} />
                     <Field label={t('eq.responsible')} value={d.responsible} />
@@ -152,10 +203,31 @@ function EquipmentDialog() {
                     <Field label={t('eq.nextService')} value={fmtDate(d.next_service)} warn={soon(d.next_service, 7)} />
                     <Field label={t('eq.certValid')} value={fmtDate(d.cert_expiry)} warn={soon(d.cert_expiry, 14)} />
                   </div>
+                  {p && (
+                    <div className="rounded-xl border border-accent/30 bg-accent/5 p-4">
+                      <p className="flex items-center gap-1.5 text-sm font-medium"><Sparkles className="size-4 text-accent" /> {t('eq.prediction')}</p>
+                      <div className="mt-3 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+                        <div><p className="text-[10px] uppercase tracking-wider text-dim">{t('eq.nextInspection')}</p><p className="font-mono">{fmtDate(p.next_inspection)}</p><p className="text-[11px] text-dim">{p.next_inspection_reason ? tx(`eq.reason.${p.next_inspection_reason}`, p.next_inspection_reason) : ''}</p></div>
+                        <div><p className="text-[10px] uppercase tracking-wider text-dim">{t('eq.failures')}</p><p className="font-mono">{p.failures_recorded}</p></div>
+                        <div><p className="text-[10px] uppercase tracking-wider text-dim">{t('eq.mtbf')}</p><p className="font-mono">{p.mtbf_days ? t('common.days', { n: p.mtbf_days }) : '—'}</p></div>
+                        <div><p className="text-[10px] uppercase tracking-wider text-dim">{t('eq.predictedIssue')}</p><p className="font-mono text-accent">{fmtDate(p.predicted_next_issue)}</p></div>
+                      </div>
+                    </div>
+                  )}
                   {d.manual && (
                     <div>
                       <p className="mb-1 text-[10px] uppercase tracking-wider text-dim">{t('eq.instructions')}</p>
                       <p className="text-sm leading-relaxed text-fg/90">{d.manual}</p>
+                    </div>
+                  )}
+                  {d.on_workstation.length > 0 && (
+                    <div>
+                      <p className="mb-1.5 text-[10px] uppercase tracking-wider text-dim">{t('eq.onWorkstation')}</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {d.on_workstation.map((e) => (
+                          <button key={e.id} onClick={() => s.set({ equipmentId: e.id })} className="cursor-pointer rounded-md border border-line px-2 py-1 text-xs text-dim hover:border-accent/60 hover:text-fg">{e.name}</button>
+                        ))}
+                      </div>
                     </div>
                   )}
                   {(d.materials.length > 0 || d.samples.length > 0) && (
@@ -168,41 +240,46 @@ function EquipmentDialog() {
                           </button>
                         ))}
                         {d.samples.map((x) => (
-                          <div key={x.id} className="flex items-center gap-2 px-3 py-2 text-sm">
+                          <button key={x.id} onClick={() => s.set({ sampleId: x.id })} className="flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left text-sm hover:bg-hover">
                             <span className="font-mono text-xs text-accent">{x.id}</span><span className="flex-1">{x.label}</span><span className="text-xs text-dim">{x.status}</span>
-                          </div>
+                          </button>
                         ))}
                       </div>
                     </div>
                   )}
+                  <div className="space-y-2">
+                    <p className="text-[10px] uppercase tracking-wider text-dim">{t('docs.title')}</p>
+                    <DocumentList docs={d.documents} />
+                    <DocumentUpload targetType={d.asset_type ?? 'machine'} targetId={d.id} onDone={() => setTimeout(load, 800)} />
+                  </div>
                   <div className="flex items-center gap-4 rounded-lg border border-line p-3">
                     <div className="rounded-md bg-white p-1.5"><QRCodeSVG value={`${location.origin}/?scan=${d.id}`} size={76} /></div>
-                    <div className="text-xs text-dim"><p className="font-medium text-fg">{t('eq.qrTitle')}</p>{t('eq.qrText')}
-                    </div>
+                    <div className="flex-1 text-xs text-dim"><p className="font-medium text-fg">{t('eq.qrTitle')}</p>{t('eq.qrText')}</div>
+                    <Button size="sm" variant="ghost" onClick={() => window.open(`/api/qr/${d.id}.svg?base_url=${encodeURIComponent(location.origin)}&scale=10`, '_blank')}><Printer /></Button>
                   </div>
                 </TabsContent>
                 <TabsContent value="history" className="space-y-4">
-                  <form onSubmit={addLog} className="grid grid-cols-2 gap-2 rounded-lg border border-line p-3 sm:grid-cols-[1fr_1fr_2fr_auto]">
-                    <Select value={kind} onChange={(e) => setKind(e.target.value)}>
-                      {['use', 'check', 'calibration', 'service', 'fix', 'note'].map((k) => <option key={k} value={k}>{logLabel(k)}</option>)}
-                    </Select>
-                    <Select value={status} onChange={(e) => setStatus(e.target.value)}>
-                      <option value="">{t('eq.keepStatus')}</option>
-                      <option value="ok">{t('eq.toOk')}</option><option value="maint">{t('eq.toMaint')}</option>
-                      <option value="alert">{t('eq.toAlert')}</option><option value="off">{t('eq.toOff')}</option>
-                    </Select>
-                    <Input value={note} onChange={(e) => setNote(e.target.value)} placeholder={t('eq.notePlaceholder')} className="col-span-2 sm:col-span-1" />
-                    <Button type="submit" size="sm" className="h-9">{t('eq.log')}</Button>
+                  <form onSubmit={addLog} className="space-y-2 rounded-lg border border-line p-3">
+                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-[1fr_1fr_2fr_auto]">
+                      <Select value={kind} onChange={(e) => setKind(e.target.value)}>
+                        {['use', 'check', 'calibration', 'service', 'fix', 'note', 'issue'].map((k) => <option key={k} value={k}>{logLabel(k)}</option>)}
+                      </Select>
+                      <Select value={status} onChange={(e) => setStatus(e.target.value)}>
+                        <option value="">{t('eq.keepStatus')}</option>
+                        <option value="ok">{t('eq.toOk')}</option><option value="maint">{t('eq.toMaint')}</option>
+                        <option value="alert">{t('eq.toAlert')}</option><option value="off">{t('eq.toOff')}</option>
+                      </Select>
+                      <Input value={note} onChange={(e) => setNote(e.target.value)} placeholder={t('eq.notePlaceholder')} className="col-span-2 sm:col-span-1" />
+                      <Button type="submit" size="sm" className="h-9">{t('eq.log')}</Button>
+                    </div>
+                    {isReading && (
+                      <div className="flex flex-wrap items-center gap-3">
+                        <Input value={reading} onChange={(e) => setReading(e.target.value)} placeholder={t('eq.readingPlaceholder')} className="w-56" />
+                        <label className="flex items-center gap-2 text-xs text-dim"><Switch checked={within} onCheckedChange={setWithin} /> {t('eq.withinUncertainty', { range: d.uncertainty || '—' })}</label>
+                      </div>
+                    )}
                   </form>
-                  <ol className="relative space-y-3 border-l border-line pl-4">
-                    {d.logs.map((l) => (
-                      <li key={l.id} className="relative">
-                        <span className={cn('absolute -left-[21px] top-1.5 size-2.5 rounded-full border-2 border-surface', l.kind === 'issue' ? 'bg-accent' : 'bg-fg/70')} />
-                        <p className="font-mono text-[11px] text-dim">{fmtDate(l.at)} · {logLabel(l.kind).toUpperCase()} · {l.user}</p>
-                        <p className="text-sm">{l.note || '—'}</p>
-                      </li>
-                    ))}
-                  </ol>
+                  <Timeline logs={d.logs} />
                 </TabsContent>
                 <TabsContent value="chat"><Discussion equipmentId={d.id} /></TabsContent>
                 <TabsContent value="help" className="space-y-4">
@@ -215,7 +292,7 @@ function EquipmentDialog() {
                           <Avatar initials={s.users.find((u) => u.id === h.user_id)?.initials ?? '?'} online={h.online} />
                           <div className="min-w-0 flex-1">
                             <p className="text-sm font-medium">{h.name} <span className="text-xs font-normal text-dim">· {roleLabel(h.role)}</span></p>
-                            <p className="truncate text-xs text-dim">{h.reasons.join(' · ')}</p>
+                            <p className="truncate text-xs text-dim" title={h.reasons.join(' · ')}>{h.reasons.join(' · ')}</p>
                           </div>
                           <Badge variant={h.match === 'high' ? 'accent' : 'default'}>{t(h.match === 'high' ? 'eq.match.high' : 'eq.match.good')}</Badge>
                           <Button size="sm" variant="subtle" onClick={() => pingHelper(h.user_id, h.name)}>{t('common.ask')}</Button>
@@ -235,6 +312,17 @@ function EquipmentDialog() {
                       </div>
                     ))}
                   </div>
+                  {d.incidents.filter((i) => i.status === 'open').length > 0 && (
+                    <div>
+                      <p className="mb-2 flex items-center gap-1.5 text-sm font-medium"><TriangleAlert className="size-4 text-accent" /> {t('eq.openIssues')}</p>
+                      {d.incidents.filter((i) => i.status === 'open').map((i) => (
+                        <div key={i.id} className="mb-2 rounded-xl border border-accent/30 p-3 text-sm">
+                          <p>{i.description}</p>
+                          <p className="mt-1 font-mono text-[11px] text-dim">{t(`priority.${i.priority}`)} · {i.reporter} · {fmtDate(i.at)}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </TabsContent>
               </div>
             </Tabs>
@@ -245,26 +333,39 @@ function EquipmentDialog() {
   )
 }
 
+type MatAction = 'take' | 'restock' | 'check' | 'move' | 'dispose' | 'use_before_expiry'
+
 function MaterialDialog() {
   const s = useLab()
   const t = useT()
   const id = s.materialId
   const [d, setD] = useState<MaterialDetail | null>(null)
+  const [action, setAction] = useState<MatAction>('take')
   const [amount, setAmount] = useState('')
+  const [target, setTarget] = useState('')
   const labMat = s.lab?.materials.find((m) => m.id === id)
   const lang = useLang((x) => x.lang)
   const load = useCallback(() => { if (id) api.get<MaterialDetail>(`/materials/${id}`).then(setD) }, [id, lang])
-  useEffect(() => { setD(null); load() }, [load, labMat?.quantity])
-  const log = async (kind: 'take' | 'restock' | 'check') => {
-    await api.post(`/materials/${id}/logs`, { user_id: s.meId, kind, amount: parseFloat(amount) || 0 })
-    s.toast(kind === 'check' ? t('mat.verified') : t(kind === 'take' ? 'mat.taken' : 'mat.restocked', { amount, unit: d?.unit ?? '' }))
-    setAmount('')
-    load(); s.refreshLab(); s.refreshQuests()
+  useEffect(() => { setD(null); load() }, [load, labMat?.quantity, labMat?.location_id])
+  const needsAmount = action !== 'move'
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    const value = parseFloat(amount)
+    if (needsAmount && Number.isNaN(value)) return
+    if (action === 'move' && !target) return
+    await api.post(`/materials/${id}/logs`, {
+      user_id: s.meId, kind: action, amount: action === 'check' ? 0 : value || 0,
+      observed: action === 'check' ? value : null, location_id: action === 'move' ? target : null,
+    })
+    s.toast(t(`mat.done.${action}`, { amount, unit: d?.unit ?? '' }))
+    setAmount(''); setTarget('')
+    load(); s.refreshLab(); s.refreshQuests(); s.refreshUsers()
   }
   const f = d?.forecast
+  const storages = s.lab?.equipment.filter((e) => e.kind === 'storage' || e.kind === 'freezer') ?? []
   return (
     <Dialog open={!!id} onOpenChange={(o) => !o && s.set({ materialId: null })}>
-      <DialogContent>
+      <DialogContent className="w-[min(720px,96vw)]">
         {!d || !f ? <div className="p-10 text-center text-sm text-dim">{t('common.loading')}</div> : (
           <div className="overflow-y-auto">
             <div className="border-b border-line p-5 pr-12">
@@ -276,9 +377,16 @@ function MaterialDialog() {
                 {f.alerts.includes('wrong_location') && <Badge variant="accent">{t('stock.wrongLocation')}</Badge>}
                 {f.alerts.includes('quantity_mismatch') && <Badge variant="accent">{t('stock.mismatch')}</Badge>}
                 {f.alerts.includes('expiring') && <Badge variant="accent">{t('mat.expiresIn', { n: f.days_to_expiry ?? 0 })}</Badge>}
+                {f.alerts.includes('expired') && <Badge variant="solid">{t('stock.expired')}</Badge>}
               </div>
             </div>
             <div className="space-y-4 p-5">
+              {(f.storage_issue || f.quantity_issue) && (
+                <div className="space-y-1 rounded-xl border border-accent/40 bg-accent/5 p-3 text-sm">
+                  {f.storage_issue && <p className="flex items-start gap-1.5"><TriangleAlert className="mt-0.5 size-4 shrink-0 text-accent" />{f.storage_issue}</p>}
+                  {f.quantity_issue && <p className="flex items-start gap-1.5"><TriangleAlert className="mt-0.5 size-4 shrink-0 text-accent" />{t('mat.mismatchText', { observed: f.quantity_issue.observed, expected: f.quantity_issue.expected, unit: d.unit })}</p>}
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                 <Field label={t('mat.inStock')} value={`${d.quantity} ${d.unit}`} warn={d.quantity < d.min_stock} />
                 <Field label={t('mat.minimum')} value={`${d.min_stock} ${d.unit}`} />
@@ -286,6 +394,9 @@ function MaterialDialog() {
                 <Field label={t('mat.expires')} value={fmtDate(d.expires)} warn={soon(d.expires, 14)} />
                 <Field label={t('mat.delivered')} value={fmtDate(d.delivered)} />
                 <Field label={t('eq.responsible')} value={d.responsible} />
+                <Field label={t('mat.lastUsedBy')} value={d.last_used_by} />
+                <Field label={t('mat.storage')} value={tx(`storage.${d.storage_requirement}`, d.storage_requirement)} />
+                <Field label={t('mat.unitCost')} value={d.unit_cost_eur ? `${d.unit_cost_eur} € / ${d.unit}` : '—'} />
               </div>
               <div className="rounded-xl border border-accent/30 bg-accent/5 p-4">
                 <p className="flex items-center gap-1.5 text-sm font-medium"><Sparkles className="size-4 text-accent" /> {t('mat.forecast')}</p>
@@ -296,28 +407,108 @@ function MaterialDialog() {
                   <div><p className="text-[10px] uppercase tracking-wider text-dim">{t('mat.orderBy')}</p><p className="font-mono text-accent">{f.order_by ? fmtDate(f.order_by) : t('mat.noNeed')}</p></div>
                 </div>
                 <p className="mt-2 text-xs text-dim">{t('mat.leadTime', { n: d.lead_time_days, list: d.used_in.map((u) => `${u.code} ${u.title}`).join(', ') || '—' })}</p>
+                {!!f.suggested_order_qty && <p className="mt-1 text-xs">{t('mat.suggestedOrder', { qty: f.suggested_order_qty, unit: d.unit })}</p>}
+                {!!f.waste_risk_eur && <p className="mt-1 text-xs text-accent">{t('mat.wasteRisk', { qty: f.unused_at_expiry ?? 0, unit: d.unit, eur: f.waste_risk_eur })}</p>}
               </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <Input type="number" step="any" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder={t('mat.amount', { unit: d.unit })} className="w-36" />
-                <Button size="sm" onClick={() => log('take')} disabled={!amount}>{t('mat.take')}</Button>
-                <Button size="sm" variant="subtle" onClick={() => log('restock')} disabled={!amount}>{t('mat.restock')}</Button>
-                <Button size="sm" variant="ghost" onClick={() => log('check')}>{t('mat.verify')}</Button>
-                <Button size="sm" variant="ghost" onClick={() => { s.set({ materialId: null, equipmentId: null }); s.focus(d.location_id) }}><Crosshair /> {t('mat.locate')}</Button>
-              </div>
+              <form onSubmit={submit} className="space-y-2 rounded-lg border border-line p-3">
+                <div className="flex flex-wrap gap-1.5">
+                  {(['take', 'restock', 'check', 'move', 'dispose', 'use_before_expiry'] as const).map((a) => (
+                    <button type="button" key={a} onClick={() => setAction(a)} className={cn('cursor-pointer rounded-md border px-2 py-1 text-xs', action === a ? 'border-accent/60 bg-accent/10 text-accent' : 'border-line text-dim hover:text-fg')}>
+                      {t(`mat.action.${a}`)}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  {needsAmount ? (
+                    <Input type="number" step="any" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder={action === 'check' ? t('mat.counted', { unit: d.unit }) : t('mat.amount', { unit: d.unit })} className="w-44" />
+                  ) : (
+                    <Select value={target} onChange={(e) => setTarget(e.target.value)} className="w-64">
+                      <option value="">{t('mat.newLocation')}</option>
+                      {storages.filter((e) => e.id !== d.location_id).map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
+                    </Select>
+                  )}
+                  <Button size="sm" type="submit" className="h-9">{t('mat.save')}</Button>
+                  <Button size="sm" variant="ghost" type="button" onClick={() => { s.set({ materialId: null, equipmentId: null }); s.focus(d.location_id) }}><Crosshair /> {t('mat.locate')}</Button>
+                </div>
+              </form>
               {d.notes && <p className="text-sm text-dim">{d.notes}</p>}
+              <div className="space-y-2">
+                <p className="text-[10px] uppercase tracking-wider text-dim">{t('mat.documents')}</p>
+                <DocumentList docs={d.documents} />
+                <DocumentUpload targetType="material" targetId={d.id} kind="sds" onDone={() => setTimeout(load, 800)} />
+              </div>
               <div>
                 <p className="mb-2 text-[10px] uppercase tracking-wider text-dim">{t('mat.usageLog')}</p>
                 <div className="divide-y divide-line rounded-lg border border-line text-sm">
                   {d.logs.map((l) => (
                     <div key={l.id} className="flex items-center gap-2 px-3 py-2">
-                      <span className="w-24 font-mono text-[11px] uppercase text-dim">{logLabel(l.kind)}</span>
+                      <span className="w-28 font-mono text-[11px] uppercase text-dim">{logLabel(l.kind)}</span>
                       <span className="flex-1">{l.user}{l.note ? ` — ${l.note}` : ''}</span>
-                      {!!l.amount && <span className="font-mono text-xs">{l.kind === 'take' ? '−' : '+'}{l.amount}</span>}
+                      {!!l.amount && <span className="font-mono text-xs">{['take', 'dispose', 'use_before_expiry'].includes(l.kind) ? '−' : '+'}{l.amount}</span>}
                       <span className="font-mono text-[11px] text-dim">{fmtDate(l.at)}</span>
                     </div>
                   ))}
                 </div>
               </div>
+            </div>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+type SampleFull = Sample & { owner: string | null; history: LogEntry[] }
+
+function SampleDialog() {
+  const s = useLab()
+  const t = useT()
+  const id = s.sampleId
+  const [d, setD] = useState<SampleFull | null>(null)
+  const [loc, setLoc] = useState('')
+  const [status, setStatus] = useState('')
+  const load = useCallback(() => { if (id) api.get<SampleFull>(`/samples/${id}`).then(setD).catch(() => setD(null)) }, [id])
+  useEffect(() => { setD(null); load() }, [load])
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault()
+    await api.patch(`/samples/${id}`, { user_id: s.meId, location_id: loc || null, status: status || null })
+    s.toast(t('sample.updated'))
+    setLoc(''); setStatus('')
+    load(); s.refreshLab()
+  }
+  const qr = id ? `/api/qr/${id}.svg?base_url=${encodeURIComponent(location.origin)}&scale=8` : ''
+  return (
+    <Dialog open={!!id} onOpenChange={(o) => !o && s.set({ sampleId: null })}>
+      <DialogContent className="w-[min(560px,94vw)]">
+        {!d ? <div className="p-10 text-center text-sm text-dim">{t('common.loading')}</div> : (
+          <div className="space-y-4 overflow-y-auto p-5">
+            <div className="flex items-start gap-4 pr-8">
+              <img src={qr || undefined} alt="QR" className="size-24 rounded-md bg-white p-1" />
+              <div className="flex-1">
+                <p className="font-mono text-xs text-accent">{d.id}</p>
+                <DialogTitle className="flex items-center gap-2 font-display text-xl font-semibold"><TestTube className="size-5 text-accent" />{d.label}</DialogTitle>
+                <p className="mt-1 text-sm text-dim">{d.status}</p>
+                <Button size="sm" variant="ghost" className="mt-1 px-0" onClick={() => window.open(qr.replace('scale=8', 'scale=14'), '_blank')}><Printer /> {t('sample.printLabel')}</Button>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <Field label={t('mat.location')} value={s.lab?.equipment.find((e) => e.id === d.location_id)?.name ?? d.location_id} />
+              <Field label={t('sample.owner')} value={d.owner} />
+              <Field label={t('sample.project')} value={s.lab?.experiments.find((x) => x.id === d.experiment_id)?.title ?? '—'} />
+              <Field label={t('sample.collected')} value={fmtDate(d.collected)} />
+            </div>
+            <form onSubmit={save} className="flex flex-wrap gap-2 rounded-lg border border-line p-3">
+              <Select value={loc} onChange={(e) => setLoc(e.target.value)} className="flex-1">
+                <option value="">{t('sample.moveTo')}</option>
+                {s.lab?.equipment.filter((e) => e.id !== d.location_id).map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
+              </Select>
+              <Input value={status} onChange={(e) => setStatus(e.target.value)} placeholder={t('sample.newStatus')} className="flex-1" />
+              <Button size="sm" type="submit" className="h-9" disabled={!loc && !status}>{t('mat.save')}</Button>
+              <Button size="sm" variant="ghost" type="button" className="h-9" onClick={() => { s.set({ sampleId: null }); s.focus(d.location_id) }}><Crosshair /></Button>
+            </form>
+            <div>
+              <p className="mb-2 text-[10px] uppercase tracking-wider text-dim">{t('sample.history')}</p>
+              <Timeline logs={d.history} />
             </div>
           </div>
         )}
@@ -335,49 +526,80 @@ function ReportDialog() {
   const [desc, setDesc] = useState('')
   const [eq, setEq] = useState('')
   const [anon, setAnon] = useState(false)
-  useEffect(() => { if (open) { setEq(s.reportFor ?? ''); setDesc(''); setPriority('medium'); setCategory('fault') } }, [open])
+  const [procedure, setProcedure] = useState<Procedure | null>(null)
+  useEffect(() => { if (open) { setEq(s.reportFor ?? ''); setDesc(''); setPriority('medium'); setCategory('fault'); setProcedure(null) } }, [open])
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
-    await api.post('/incidents', { lab_id: s.labId, reporter_id: s.meId, category, priority, description: desc, equipment_id: eq || null, anonymous: anon })
+    const r = await api.post<{ procedure?: Procedure }>('/incidents', { lab_id: s.labId, reporter_id: s.meId, category, priority, description: desc, equipment_id: eq || null, anonymous: anon })
     s.toast(t('report.sent'))
-    s.set({ reportFor: undefined })
     s.refreshLab(); s.refreshUsers(); s.refreshQuests()
+    if (r.procedure) setProcedure(r.procedure)
+    else s.set({ reportFor: undefined })
   }
   const aid = s.lab?.points.filter((p) => ['eyewash', 'shower', 'exit', 'firstaid'].includes(p.kind)) ?? []
   return (
     <Dialog open={open} onOpenChange={(o) => !o && s.set({ reportFor: undefined })}>
       <DialogContent className="w-[min(520px,94vw)]">
-        <form onSubmit={submit} className="space-y-4 overflow-y-auto p-5">
-          <DialogTitle className="flex items-center gap-2 font-display text-lg font-semibold"><ShieldAlert className="size-5 text-accent" /> {t('report.title')}</DialogTitle>
-          {priority === 'critical' && (
+        {procedure ? (
+          <div className="space-y-4 overflow-y-auto p-5">
+            <DialogTitle className="flex items-center gap-2 font-display text-lg font-semibold"><AlertOctagon className="size-5 text-accent" /> {t('report.procedureTitle')}</DialogTitle>
             <div className="rounded-xl border-2 border-accent bg-accent/10 p-3 text-sm">
-              <p className="flex items-center gap-1.5 font-semibold"><AlertOctagon className="size-4 text-accent" /> {t('report.emergencyTitle')}</p>
-              <p className="mt-1 text-xs text-fg/90">{t('report.emergencyText', { list: aid.map((p) => p.label).join(', ') })}</p>
-              <Button type="button" size="sm" variant="subtle" className="mt-2" onClick={() => { s.set({ layer: 'safety', reportFor: undefined, equipmentId: null }) }}>{t('report.showSafety')}</Button>
+              <p className="font-semibold">{procedure.disclaimer}</p>
+              <p className="mt-1 text-xs">{t('report.callNumber', { n: procedure.emergency_number })}</p>
             </div>
-          )}
-          <div className="grid grid-cols-2 gap-2">
-            <label className="space-y-1 text-xs text-dim">{t('report.category')}
-              <Select value={category} onChange={(e) => setCategory(e.target.value)} className="w-full">
-                {(['fault', 'spill', 'exposure', 'fire', 'near_miss', 'other'] as const).map((c) => <option key={c} value={c}>{t(`report.cat.${c}`)}</option>)}
-              </Select>
-            </label>
-            <label className="space-y-1 text-xs text-dim">{t('report.priority')}
-              <Select value={priority} onChange={(e) => setPriority(e.target.value)} className="w-full">
-                {(['low', 'medium', 'high', 'critical'] as const).map((p) => <option key={p} value={p}>{t(`report.pri.${p}`)}</option>)}
-              </Select>
-            </label>
+            <ol className="list-decimal space-y-1.5 pl-5 text-sm">
+              {procedure.steps.map((step, i) => <li key={i}>{step}</li>)}
+            </ol>
+            {procedure.nearest.length > 0 && (
+              <div>
+                <p className="mb-1.5 text-[10px] uppercase tracking-wider text-dim">{t('report.nearestPoints')}</p>
+                <div className="space-y-1">
+                  {procedure.nearest.map((p) => (
+                    <div key={p.id} className="flex items-center justify-between rounded-lg border border-line px-3 py-2 text-sm">
+                      <span>{p.label}</span><span className="font-mono text-xs text-dim">{p.distance_m !== null ? `${p.distance_m} m` : ''}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            <p className="text-xs text-dim">{t('report.notified')}</p>
+            <div className="flex gap-2">
+              <Button className="flex-1" onClick={() => s.set({ layer: 'safety', reportFor: undefined, equipmentId: null })}>{t('report.showSafety')}</Button>
+              <Button variant="ghost" onClick={() => s.set({ reportFor: undefined })}>{t('common.close')}</Button>
+            </div>
           </div>
-          <label className="block space-y-1 text-xs text-dim">{t('report.location')}
-            <Select value={eq} onChange={(e) => setEq(e.target.value)} className="w-full">
-              <option value="">{t('report.wholeLab')}</option>
-              {s.lab?.equipment.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
-            </Select>
-          </label>
-          <Textarea value={desc} onChange={(e) => setDesc(e.target.value)} placeholder={t('report.placeholder')} required />
-          <label className="flex items-center gap-2 text-sm"><Switch checked={anon} onCheckedChange={setAnon} /> {t('report.anonymous')} <span className="text-xs text-dim">{t('report.anonymousHint')}</span></label>
-          <Button type="submit" className="w-full">{t('report.submit')}</Button>
-        </form>
+        ) : (
+          <form onSubmit={submit} className="space-y-4 overflow-y-auto p-5">
+            <DialogTitle className="flex items-center gap-2 font-display text-lg font-semibold"><ShieldAlert className="size-5 text-accent" /> {t('report.title')}</DialogTitle>
+            {priority === 'critical' && (
+              <div className="rounded-xl border-2 border-accent bg-accent/10 p-3 text-sm">
+                <p className="flex items-center gap-1.5 font-semibold"><AlertOctagon className="size-4 text-accent" /> {t('report.emergencyTitle')}</p>
+                <p className="mt-1 text-xs text-fg/90">{t('report.emergencyText', { list: aid.map((p) => p.label).join(', ') })}</p>
+              </div>
+            )}
+            <div className="grid grid-cols-2 gap-2">
+              <label className="space-y-1 text-xs text-dim">{t('report.category')}
+                <Select value={category} onChange={(e) => setCategory(e.target.value)} className="w-full">
+                  {(['fault', 'spill', 'exposure', 'fire', 'near_miss', 'other'] as const).map((c) => <option key={c} value={c}>{t(`report.cat.${c}`)}</option>)}
+                </Select>
+              </label>
+              <label className="space-y-1 text-xs text-dim">{t('report.priority')}
+                <Select value={priority} onChange={(e) => setPriority(e.target.value)} className="w-full">
+                  {(['low', 'medium', 'high', 'critical'] as const).map((p) => <option key={p} value={p}>{t(`report.pri.${p}`)}</option>)}
+                </Select>
+              </label>
+            </div>
+            <label className="block space-y-1 text-xs text-dim">{t('report.location')}
+              <Select value={eq} onChange={(e) => setEq(e.target.value)} className="w-full">
+                <option value="">{t('report.wholeLab')}</option>
+                {s.lab?.equipment.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
+              </Select>
+            </label>
+            <Textarea value={desc} onChange={(e) => setDesc(e.target.value)} placeholder={t('report.placeholder')} required />
+            <label className="flex items-center gap-2 text-sm"><Switch checked={anon} onCheckedChange={setAnon} /> {t('report.anonymous')} <span className="text-xs text-dim">{t('report.anonymousHint')}</span></label>
+            <Button type="submit" className="w-full">{t('report.submit')}</Button>
+          </form>
+        )}
       </DialogContent>
     </Dialog>
   )
@@ -391,14 +613,14 @@ export async function resolveCode(raw: string) {
   const s = useLab.getState()
   const code = (raw.includes('scan=') ? new URL(raw, location.origin).searchParams.get('scan') ?? raw : raw).trim()
   try {
-    const r = await api.get<{ type: string; id: string; lab_id: string; location?: string; sample?: { label: string; status: string }; owner?: string }>(`/scan/${encodeURIComponent(code)}`)
+    const r = await api.get<{ type: string; id: string; lab_id: string; location?: string }>(`/scan/${encodeURIComponent(code)}`)
     if (r.lab_id !== s.labId) await s.selectLab(r.lab_id)
     s.set({ scanOpen: false })
     if (r.type === 'equipment') s.focus(r.id, true)
     else if (r.type === 'material') s.set({ materialId: r.id })
     else {
       s.focus(r.location!)
-      s.toast(tr('scan.sample', { id: r.id, label: r.sample?.label ?? '', status: r.sample?.status ?? '', location: r.location ?? '', owner: r.owner ?? '' }), 'plain')
+      s.set({ sampleId: r.id })
     }
   } catch (e) {
     s.toast((e as Error).message, 'plain')
@@ -430,11 +652,11 @@ function ScanDialog() {
           await new Promise((r) => setTimeout(r, 300))
         }
       } catch {
-        s.toast(t('scan.cameraError'), 'plain')
+        s.toast(tr('scan.cameraError'), 'plain')
         setCam(false)
       }
     })()
-    return () => { alive = false; stream?.getTracks().forEach((t) => t.stop()) }
+    return () => { alive = false; stream?.getTracks().forEach((x) => x.stop()) }
   }, [cam, s.scanOpen])
 
   return (
@@ -460,131 +682,58 @@ function ScanDialog() {
   )
 }
 
-interface Stats {
-  hotspots: { equipment_id: string; name: string; count: number }[]
-  incidents_open: number; near_misses: number; incidents_by_priority: Record<string, number>
-  rejection_signals: { title: string; reason: string; count: number }[]
-  esg: { expiring_flagged: number; expired: number; reorders_planned: number; esg_quests_done: number; est_savings_eur: number }
-  engagement: { active_users: number; users: number; quests_done: number; xp_total: number }
-  leaderboard: { name: string; xp: number; role: string }[]
-}
+const LOCAL_TIPS = [1, 2, 3, 4, 5] as const
 
-function AdminDialog() {
+function OnboardingDialog() {
   const s = useLab()
   const t = useT()
   const lang = useLang((x) => x.lang)
-  const [stats, setStats] = useState<Stats | null>(null)
-  const [inc, setInc] = useState<Incident[]>([])
-  const [res, setRes] = useState<Record<number, string>>({})
-  const load = useCallback(() => {
-    api.get<Stats>(`/admin/stats?lab_id=${s.labId}`).then(setStats)
-    api.get<Incident[]>(`/incidents?lab_id=${s.labId}`).then(setInc)
-  }, [s.labId, lang])
-  useEffect(() => { if (s.adminOpen) load() }, [s.adminOpen, load, s.lab])
-  const resolve = async (id: number) => {
-    await api.post(`/incidents/${id}/resolve`, { user_id: s.meId, resolution: res[id] || t('admin.resolvedDefault') })
-    s.toast(t('admin.resolved'))
-    load(); s.refreshLab(); s.refreshQuests()
-  }
-  const open = inc.filter((i) => i.status === 'open')
-  const max = Math.max(1, ...(stats?.hotspots.map((h) => h.count) ?? [1]))
-  return (
-    <Dialog open={s.adminOpen} onOpenChange={(o) => s.set({ adminOpen: o })}>
-      <DialogContent className="w-[min(960px,96vw)]">
-        <div className="border-b border-line p-5">
-          <DialogTitle className="font-display text-xl font-semibold">{t('admin.title', { lab: s.lab?.name ?? '' })}</DialogTitle>
-          <p className="text-xs text-dim">{t('admin.subtitle')}</p>
-        </div>
-        {stats && (
-          <div className="grid gap-4 overflow-y-auto p-5 md:grid-cols-2">
-            <div className="grid grid-cols-2 gap-2 md:col-span-2 md:grid-cols-4">
-              {[
-                [t('admin.openIncidents'), stats.incidents_open], [t('admin.nearMisses'), stats.near_misses],
-                [t('admin.questsDone'), stats.engagement.quests_done], [t('admin.savings'), stats.esg.est_savings_eur],
-              ].map(([l, v]) => (
-                <div key={l} className="rounded-xl border border-line bg-elev/60 p-3">
-                  <p className="text-[10px] uppercase tracking-wider text-dim">{l}</p>
-                  <p className="font-display text-2xl font-semibold">{v}</p>
-                </div>
-              ))}
-            </div>
-            <section className="space-y-2 md:col-span-2">
-              <h4 className="flex items-center gap-1.5 text-sm font-medium"><ShieldAlert className="size-4 text-accent" /> {t('admin.escalations')}</h4>
-              {open.length === 0 && <p className="text-xs text-muted">{t('admin.nothingOpen')}</p>}
-              {open.map((i) => (
-                <div key={i.id} className={cn('flex flex-wrap items-center gap-2 rounded-xl border p-3', i.priority === 'critical' || i.priority === 'high' ? 'border-accent/50' : 'border-line')}>
-                  <Badge variant={i.priority === 'critical' ? 'solid' : i.priority === 'high' ? 'accent' : 'default'}>{t(`priority.${i.priority}`)}</Badge>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm">{i.description}</p>
-                    <p className="text-xs text-dim">{t(`report.cat.${i.category}` as TKey)} · {i.equipment ?? t('common.lab')} · {i.reporter} · {fmtDate(i.at)} {fmtTime(i.at)}</p>
-                  </div>
-                  <Input value={res[i.id] ?? ''} onChange={(e) => setRes({ ...res, [i.id]: e.target.value })} placeholder={t('admin.resolution')} className="h-8 w-48 text-xs" />
-                  <Button size="sm" onClick={() => resolve(i.id)}>{t('admin.resolve')}</Button>
-                </div>
-              ))}
-            </section>
-            <section className="rounded-xl border border-line p-4">
-              <h4 className="mb-3 text-sm font-medium">{t('admin.hotspots')}</h4>
-              {stats.hotspots.map((h) => (
-                <button key={h.equipment_id} onClick={() => { s.set({ adminOpen: false, layer: 'social' }); s.focus(h.equipment_id) }} className="mb-2 block w-full cursor-pointer text-left">
-                  <div className="flex justify-between text-xs"><span>{h.name}</span><span className="font-mono">{h.count}</span></div>
-                  <div className="mt-1 h-1.5 rounded-full bg-white/10"><div className="h-full rounded-full bg-accent" style={{ width: `${(h.count / max) * 100}%` }} /></div>
-                </button>
-              ))}
-            </section>
-            <section className="rounded-xl border border-line p-4">
-              <h4 className="mb-3 text-sm font-medium">{t('admin.signals')}</h4>
-              {stats.rejection_signals.length === 0 && <p className="text-xs text-muted">{t('admin.noSignals')}</p>}
-              {stats.rejection_signals.map((r) => (
-                <div key={r.title} className="mb-2 rounded-lg border border-accent/30 bg-accent/5 p-2.5 text-xs">
-                  <p className="font-medium text-fg">{t('admin.rejected', { title: r.title, n: r.count })}</p>
-                  <p className="text-dim">{t('admin.reason', { reason: r.reason })}</p>
-                </div>
-              ))}
-            </section>
-            <section className="rounded-xl border border-line p-4">
-              <h4 className="mb-3 flex items-center gap-1.5 text-sm font-medium"><Leaf className="size-4 text-accent" /> {t('admin.esg')}</h4>
-              <ul className="space-y-1.5 text-xs">
-                {[
-                  [t('admin.esg.flagged'), stats.esg.expiring_flagged], [t('admin.esg.expired'), stats.esg.expired],
-                  [t('admin.esg.reorders'), stats.esg.reorders_planned], [t('admin.esg.quests'), stats.esg.esg_quests_done],
-                ].map(([l, v]) => <li key={l} className="flex justify-between border-b border-line pb-1.5"><span className="text-dim">{l}</span><span className="font-mono">{v}</span></li>)}
-              </ul>
-            </section>
-            <section className="rounded-xl border border-line p-4">
-              <h4 className="mb-3 text-sm font-medium">{t('admin.engagement', { active: stats.engagement.active_users, total: stats.engagement.users })}</h4>
-              <ul className="space-y-1.5 text-xs">
-                {stats.leaderboard.map((u) => <li key={u.name} className="flex justify-between"><span>{u.name} <span className="text-dim">· {roleLabel(u.role)}</span></span><span className="font-mono">{u.xp} XP</span></li>)}
-              </ul>
-              <p className="mt-2 text-[10px] text-muted">{t('admin.engagementNote')}</p>
-            </section>
-          </div>
-        )}
-      </DialogContent>
-    </Dialog>
-  )
-}
-
-const TIPS = [1, 2, 3, 4, 5] as const
-
-function Onboarding() {
-  const s = useLab()
-  const t = useT()
   const [i, setI] = useState(0)
+  const [data, setData] = useState<Onboarding | null>(null)
   const me = s.me()
+  useEffect(() => {
+    if (s.onboardingOpen) api.get<Onboarding>(`/onboarding/${s.meId}`).then(setData).catch(() => setData(null))
+  }, [s.onboardingOpen, s.meId, lang])
+  const tips = data?.tips.length ? data.tips : LOCAL_TIPS.map((k) => ({ title: t(`onb.${k}.title`), body: t(`onb.${k}.body`) }))
+  const total = tips.length + (data ? 1 : 0)
+  const close = async () => {
+    s.set({ onboardingOpen: false })
+    setI(0)
+    await api.post(`/onboarding/${s.meId}/complete`, {}).catch(() => null)
+    s.refreshUsers()
+  }
+  const onTeamStep = !!data && i === tips.length
   return (
-    <Dialog open={s.onboardingOpen} onOpenChange={(o) => { s.set({ onboardingOpen: o }); if (!o) setI(0) }}>
-      <DialogContent className="w-[min(460px,94vw)]">
-        <div className="p-6">
-          <p className="font-mono text-[11px] tracking-[0.1em] text-accent">ONBOARDING · {i + 1}/{TIPS.length}</p>
-          <DialogTitle className="mt-2 font-display text-2xl font-semibold">{i === 0 && me ? t('onb.welcome', { name: me.name.replace('Dr. ', '').split(' ')[0] }) : ''}{t(`onb.${TIPS[i]}.title`)}</DialogTitle>
-          <p className="mt-3 text-sm leading-relaxed text-fg/85">{t(`onb.${TIPS[i]}.body`)}</p>
-          <div className="mt-5 flex gap-1">{TIPS.map((_, k) => <span key={k} className={cn('h-1 flex-1 rounded-full', k <= i ? 'bg-accent' : 'bg-white/10')} />)}</div>
+    <Dialog open={s.onboardingOpen} onOpenChange={(o) => { if (!o) close() }}>
+      <DialogContent className="w-[min(520px,94vw)]">
+        <div className="overflow-y-auto p-6">
+          <p className="font-mono text-[11px] tracking-[0.1em] text-accent">ONBOARDING · {i + 1}/{total}</p>
+          {onTeamStep && data ? (
+            <>
+              <DialogTitle className="mt-2 font-display text-2xl font-semibold">{t('onb.teamTitle')}</DialogTitle>
+              {data.mentor && <p className="mt-3 text-sm">{t('onb.mentor', { name: data.mentor.name })}</p>}
+              <div className="mt-3 max-h-64 space-y-2 overflow-y-auto">
+                {data.who_does_what.map((r) => (
+                  <div key={r.id} className="rounded-lg border border-line p-2.5 text-xs">
+                    <p className="text-sm font-medium">{r.name} {r.people.length > 0 && <span className="text-xs font-normal text-dim">· {r.people.join(', ')}</span>}</p>
+                    <p className="text-dim">{r.description}</p>
+                  </div>
+                ))}
+              </div>
+              {data.starter_quests.length > 0 && (
+                <p className="mt-3 text-xs text-dim">{t('onb.starter')}: {data.starter_quests.map((q) => q.title).join(' · ')}</p>
+              )}
+            </>
+          ) : (
+            <>
+              <DialogTitle className="mt-2 font-display text-2xl font-semibold">{i === 0 && me ? t('onb.welcome', { name: me.name.replace('Dr. ', '').split(' ')[0] }) : ''}{tips[i]?.title}</DialogTitle>
+              <p className="mt-3 text-sm leading-relaxed text-fg/85">{tips[i]?.body}</p>
+            </>
+          )}
+          <div className="mt-5 flex gap-1">{Array.from({ length: total }).map((_, k) => <span key={k} className={cn('h-1 flex-1 rounded-full', k <= i ? 'bg-accent' : 'bg-white/10')} />)}</div>
           <div className="mt-5 flex justify-between">
-            <Button variant="ghost" onClick={() => s.set({ onboardingOpen: false })}>{t('onb.skip')}</Button>
-            <Button onClick={() => (i < TIPS.length - 1 ? setI(i + 1) : (s.set({ onboardingOpen: false }), setI(0)))}>
-              {i < TIPS.length - 1 ? t('onb.next') : t('onb.start')}
-            </Button>
+            <Button variant="ghost" onClick={close}>{t('onb.skip')}</Button>
+            <Button onClick={() => (i < total - 1 ? setI(i + 1) : close())}>{i < total - 1 ? t('onb.next') : t('onb.start')}</Button>
           </div>
         </div>
       </DialogContent>
@@ -597,10 +746,11 @@ export default function Dialogs() {
     <>
       <EquipmentDialog />
       <MaterialDialog />
+      <SampleDialog />
       <ReportDialog />
       <ScanDialog />
-      <AdminDialog />
-      <Onboarding />
+      <AdminPanel />
+      <OnboardingDialog />
     </>
   )
 }

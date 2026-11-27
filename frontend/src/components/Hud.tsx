@@ -1,5 +1,5 @@
 import {
-  Check, ChevronDown, ClipboardList, FlaskConical, Layers, LayoutDashboard, MessageSquare, Minus, Plus, QrCode,
+  Bell, Check, CheckCheck, ChevronDown, ClipboardList, FlaskConical, Layers, LayoutDashboard, MessageSquare, Minus, Plus, QrCode,
   RotateCcw, RotateCw, Search, Settings2, Sparkles, TriangleAlert, Undo2, X,
 } from 'lucide-react'
 import { useState } from 'react'
@@ -11,9 +11,9 @@ import {
 import { Switch } from '@/components/ui/switch'
 import { api } from '@/lib/api'
 import { tx, useLang, useT, type TKey } from '@/lib/i18n'
-import { cn } from '@/lib/utils'
+import { cn, fmtDate, fmtTime } from '@/lib/utils'
 import { useLab } from '@/store'
-import type { Layer } from '@/types'
+import type { AppNotification, Layer } from '@/types'
 
 export const roleLabel = (r: string) => tx(`role.${r}`, r)
 
@@ -41,6 +41,61 @@ function LanguageSwitch() {
         </button>
       ))}
     </div>
+  )
+}
+
+function NotificationsMenu() {
+  const s = useLab()
+  const t = useT()
+  const unread = s.notifications.filter((n) => !n.read).length
+  const open = async (n: AppNotification) => {
+    if (!n.read) await api.post(`/notifications/${n.id}/read`, {})
+    s.loadNotifications()
+    if (n.ref_type === 'equipment' && n.ref_id) s.focus(n.ref_id, true)
+    else if (n.ref_type === 'material' && n.ref_id) s.set({ materialId: n.ref_id })
+    else if (n.ref_type === 'sample' && n.ref_id) s.set({ sampleId: n.ref_id })
+    else if (n.ref_type === 'quest') s.set({ sideOpen: true, sideTab: 'quests' })
+    else if (n.ref_type === 'channel' && n.ref_id) {
+      s.set({ chatOpen: true })
+      s.openChannel(n.ref_id)
+    } else if (n.ref_type === 'incident') s.set(s.me()?.access === 'worker' ? { layer: 'safety' } : { adminOpen: true })
+  }
+  const readAll = async () => {
+    await api.post(`/notifications/read-all?user_id=${s.meId}`, {})
+    s.loadNotifications()
+  }
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button className="relative flex size-12 cursor-pointer items-center justify-center rounded-full border border-line-strong bg-surface text-fg outline-none hover:bg-hover" aria-label={t('notif.title')}>
+          <Bell className="size-5" />
+          {unread > 0 && (
+            <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-canvas-edge bg-accent px-1.5 font-mono text-[11px] font-bold text-accent-ink">{unread}</span>
+          )}
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-[min(360px,92vw)]">
+        <div className="flex items-center justify-between px-2.5 pb-1">
+          <DropdownMenuLabel className="px-0">{t('notif.title')}</DropdownMenuLabel>
+          {unread > 0 && (
+            <button onClick={readAll} className="flex cursor-pointer items-center gap-1 text-[11px] text-accent hover:underline"><CheckCheck className="size-3.5" />{t('notif.readAll')}</button>
+          )}
+        </div>
+        <div className="max-h-[60vh] overflow-y-auto">
+          {s.notifications.length === 0 && <p className="px-2.5 py-6 text-center text-xs text-muted">{t('notif.empty')}</p>}
+          {s.notifications.slice(0, 30).map((n) => (
+            <DropdownMenuItem key={n.id} onSelect={() => open(n)} className="items-start">
+              <span className={cn('mt-1.5 size-2 shrink-0 rounded-full', n.read ? 'bg-transparent' : 'bg-accent')} />
+              <div className="min-w-0 flex-1">
+                <p className={cn('text-[13px] leading-snug', !n.read && 'font-medium')}>{n.title}</p>
+                {n.body && <p className="line-clamp-2 text-xs text-dim">{n.body}</p>}
+                <p className="mt-0.5 font-mono text-[10px] text-muted">{fmtDate(n.at)} {fmtTime(n.at)}</p>
+              </div>
+            </DropdownMenuItem>
+          ))}
+        </div>
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }
 
@@ -74,6 +129,7 @@ function Header() {
             </span>
           )}
         </button>
+        <NotificationsMenu />
       </div>
 
       <div className="pointer-events-auto flex min-w-0 flex-col items-center">
@@ -105,7 +161,7 @@ function Header() {
         </DropdownMenu>
         {lab && (
           <p className="hidden text-xs text-dim sm:block">
-            {lab.building} · {t('header.manager')}: {lab.manager} ·{' '}
+            {lab.building ? `${lab.building} · ` : ''}{t('header.manager')}: {lab.manager} ·{' '}
             {(() => {
               const n = lab.equipment.filter((e) => e.status === 'alert').length
               return <span className={n ? 'text-accent' : ''}>{t('header.alertsActive', { n })}</span>

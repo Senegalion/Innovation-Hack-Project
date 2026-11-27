@@ -1,4 +1,4 @@
-import { ArrowLeft, ArrowRight, AtSign, Cpu, Hash, HelpCircle, MessageSquarePlus, Paperclip, Users, X } from 'lucide-react'
+import { ArrowLeft, ArrowRight, AtSign, Cpu, FileText, FlaskConical, Hash, HelpCircle, ImagePlus, MessageSquarePlus, Package, Paperclip, UserPlus, Users, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { Avatar, roleLabel } from '@/components/Hud'
 import { Input, Select } from '@/components/ui/input'
@@ -6,7 +6,7 @@ import { api } from '@/lib/api'
 import { useT } from '@/lib/i18n'
 import { cn, fmtTime } from '@/lib/utils'
 import { useLab } from '@/store'
-import type { Channel } from '@/types'
+import type { Attachment, Channel, Message } from '@/types'
 
 const dmId = (a: string, b: string) => `dm:${[a, b].sort().join(':')}`
 
@@ -17,6 +17,37 @@ export function ChannelIcon({ c }: { c: Channel }) {
   return <AtSign className="size-4 text-dim" />
 }
 
+export function MessageExtras({ m }: { m: Message }) {
+  const s = useLab()
+  const lab = s.lab
+  const share = m.share
+  const shareName = share && lab
+    ? share.type === 'material' ? lab.materials.find((x) => x.id === share.id)?.name
+      : share.type === 'sample' ? `${share.id} ${lab.samples.find((x) => x.id === share.id)?.label ?? ''}`
+        : lab.equipment.find((x) => x.id === share.id)?.name
+    : null
+  return (
+    <>
+      {share && (
+        <button onClick={() => share.type === 'material' ? s.set({ materialId: share.id }) : share.type === 'sample' ? s.set({ sampleId: share.id }) : s.focus(share.id, true)}
+          className="mt-1 flex cursor-pointer items-center gap-1.5 rounded-lg border border-line bg-canvas-edge px-2 py-1 text-xs text-dim hover:border-accent/60 hover:text-fg">
+          {share.type === 'material' ? <Package className="size-3.5 text-accent" /> : share.type === 'sample' ? <FlaskConical className="size-3.5 text-accent" /> : <Cpu className="size-3.5 text-accent" />}
+          {shareName ?? share.id}
+        </button>
+      )}
+      {(m.attachments ?? []).map((a) => a.content_type.startsWith('image/') ? (
+        <a key={a.id} href={a.url} target="_blank" rel="noreferrer" className="mt-1 block">
+          <img src={a.url} alt={a.title} className="max-h-40 rounded-lg border border-line object-cover" />
+        </a>
+      ) : (
+        <a key={a.id} href={a.url} target="_blank" rel="noreferrer" className="mt-1 flex items-center gap-1.5 rounded-lg border border-line bg-canvas-edge px-2 py-1 text-xs text-dim hover:text-fg">
+          <FileText className="size-3.5 text-accent" />{a.title}
+        </a>
+      ))}
+    </>
+  )
+}
+
 export default function ChatDrawer() {
   const s = useLab()
   const t = useT()
@@ -25,6 +56,11 @@ export default function ChatDrawer() {
   const [ref, setRef] = useState<string>('')
   const [help, setHelp] = useState(false)
   const [newDm, setNewDm] = useState(false)
+  const [atts, setAtts] = useState<Attachment[]>([])
+  const [uploading, setUploading] = useState(false)
+  const [groupName, setGroupName] = useState('')
+  const [groupMembers, setGroupMembers] = useState<string[]>([])
+  const [inviting, setInviting] = useState(false)
   const bottom = useRef<HTMLDivElement>(null)
   const current = channels.find((c) => c.id === activeChannel)
   const msgs = activeChannel ? messages[activeChannel] ?? [] : []
@@ -40,13 +76,18 @@ export default function ChatDrawer() {
   const send = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!text.trim() || !activeChannel) return
+    const [kind, id] = ref ? ref.split(':') : ['', '']
     await api.post('/messages', {
-      channel: activeChannel, sender_id: meId, text, equipment_ref: ref || null, help_request: help,
+      channel: activeChannel, sender_id: meId, text, help_request: help,
+      equipment_ref: kind === 'machine' ? id : null,
+      share: kind && kind !== 'machine' ? { type: kind, id } : null,
+      attachments: atts.map((a) => a.id),
     })
     if (help) s.toast(t('chat.helpPosted'))
     setText('')
     setRef('')
     setHelp(false)
+    setAtts([])
     if (!channels.some((c) => c.id === activeChannel)) s.loadChannels()
     s.refreshQuests()
   }
@@ -54,6 +95,40 @@ export default function ChatDrawer() {
   const startDm = (uid: string) => {
     setNewDm(false)
     s.openChannel(dmId(meId, uid))
+  }
+
+  const attach = async (file: File) => {
+    setUploading(true)
+    try {
+      const d = await api.upload<{ id: number; title: string; kind: string; content_type: string }>('/documents', {
+        file, lab_id: lab.id, kind: file.type.startsWith('image/') ? 'image' : 'auto', process: 'false',
+      })
+      setAtts((a) => [...a, { id: d.id, title: d.title, kind: d.kind, content_type: d.content_type, url: `/api/documents/${d.id}/download` }])
+    } catch (err) {
+      s.toast((err as Error).message, 'plain')
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  const createGroup = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!groupName.trim()) return
+    const c = await api.post<{ id: string }>('/channels', { lab_id: lab.id, name: groupName, members: groupMembers })
+    setGroupName('')
+    setGroupMembers([])
+    setNewDm(false)
+    await s.loadChannels()
+    s.openChannel(c.id)
+  }
+
+  const invite = async (uid: string) => {
+    if (!current) return
+    await api.post(`/channels/${current.id}/invite`, { user_ids: [uid] })
+    setInviting(false)
+    s.toast(t('chat.invitedToast', { name: users.find((u) => u.id === uid)?.name ?? uid }))
+    await s.loadChannels()
+    s.openChannel(current.id)
   }
 
   return (
@@ -87,6 +162,19 @@ export default function ChatDrawer() {
       {newDm ? (
         <div className="flex-1 overflow-y-auto p-3">
           <button onClick={() => setNewDm(false)} className="mb-2 flex cursor-pointer items-center gap-1 text-xs text-dim hover:text-fg"><ArrowLeft className="size-3.5" /> {t('common.back')}</button>
+          <form onSubmit={createGroup} className="mb-4 space-y-2 rounded-xl border border-line p-3">
+            <p className="text-xs uppercase tracking-wider text-dim">{t('chat.newGroup')}</p>
+            <Input value={groupName} onChange={(e) => setGroupName(e.target.value)} placeholder={t('chat.groupName')} />
+            <div className="flex flex-wrap gap-1.5">
+              {others.map((u) => (
+                <button type="button" key={u.id} onClick={() => setGroupMembers((m) => m.includes(u.id) ? m.filter((x) => x !== u.id) : [...m, u.id])}
+                  className={cn('cursor-pointer rounded-md border px-2 py-1 text-[11px]', groupMembers.includes(u.id) ? 'border-accent bg-accent/10 text-accent' : 'border-line text-dim')}>
+                  {u.name.replace('Dr. ', '')}
+                </button>
+              ))}
+            </div>
+            <button type="submit" disabled={!groupName.trim()} className="w-full cursor-pointer rounded-lg bg-accent py-1.5 text-xs font-medium text-accent-ink disabled:opacity-40">{t('chat.createGroup')}</button>
+          </form>
           <p className="mb-2 text-xs uppercase tracking-wider text-dim">{t('chat.directMessage')}</p>
           {others.map((u) => (
             <button key={u.id} onClick={() => startDm(u.id)} className="flex w-full cursor-pointer items-center gap-3 rounded-lg p-2 text-left hover:bg-hover">
@@ -108,7 +196,22 @@ export default function ChatDrawer() {
             {current?.equipment_id && (
               <button onClick={() => s.focus(current.equipment_id!, true)} className="cursor-pointer text-accent hover:underline">{t('chat.showOnMap')}</button>
             )}
+            {current?.kind === 'group' && (
+              <button onClick={() => setInviting(!inviting)} className="flex cursor-pointer items-center gap-1 text-accent hover:underline"><UserPlus className="size-3.5" />{t('chat.invite')}</button>
+            )}
           </div>
+          {current?.kind === 'group' && (
+            <div className="flex flex-wrap gap-1 px-4 pt-2">
+              {(current.members ?? []).map((id) => <Avatar key={id} initials={users.find((u) => u.id === id)?.initials ?? '?'} className="size-6 text-[9px]" />)}
+            </div>
+          )}
+          {inviting && current?.kind === 'group' && (
+            <div className="mx-4 mt-2 flex flex-wrap gap-1.5 rounded-lg border border-line p-2">
+              {others.filter((u) => !(current.members ?? []).includes(u.id)).map((u) => (
+                <button key={u.id} onClick={() => invite(u.id)} className="cursor-pointer rounded-md border border-line px-2 py-1 text-[11px] text-dim hover:border-accent hover:text-fg">+ {u.name.replace('Dr. ', '')}</button>
+              ))}
+            </div>
+          )}
           <div className="flex-1 space-y-3 overflow-y-auto px-4 py-3">
             {msgs.length === 0 && <p className="pt-8 text-center text-sm text-muted">{t('chat.empty')}</p>}
             {msgs.map((m) => {
@@ -135,6 +238,7 @@ export default function ChatDrawer() {
                         <Cpu className="size-3.5 text-accent" /> {eq.name}
                       </button>
                     )}
+                    <MessageExtras m={m} />
                   </div>
                 </div>
               )
@@ -145,9 +249,21 @@ export default function ChatDrawer() {
             <div className="flex flex-wrap items-center gap-1.5 text-xs">
               <Paperclip className="size-3.5 text-dim" />
               <Select value={ref} onChange={(e) => setRef(e.target.value)} className="h-7 flex-1 text-xs">
-                <option value="">{t('chat.shareEquipment')}</option>
-                {lab.equipment.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
+                <option value="">{t('chat.share')}</option>
+                <optgroup label={t('chat.shareEquipmentGroup')}>
+                  {lab.equipment.map((e) => <option key={e.id} value={`machine:${e.id}`}>{e.name}</option>)}
+                </optgroup>
+                <optgroup label={t('chat.shareMaterialGroup')}>
+                  {lab.materials.map((m) => <option key={m.id} value={`material:${m.id}`}>{m.name}</option>)}
+                </optgroup>
+                <optgroup label={t('chat.shareSampleGroup')}>
+                  {lab.samples.map((x) => <option key={x.id} value={`sample:${x.id}`}>{x.id} {x.label}</option>)}
+                </optgroup>
               </Select>
+              <label className={cn('flex cursor-pointer items-center gap-1 rounded-md border border-line px-1.5 py-1 text-[10px] text-dim hover:text-fg', uploading && 'opacity-50')}>
+                <ImagePlus className="size-3" /> {t('chat.attach')}
+                <input type="file" className="hidden" disabled={uploading} onChange={(e) => { const f = e.target.files?.[0]; if (f) attach(f); e.target.value = '' }} />
+              </label>
               {['@service', '@leader', '@manager'].map((tag) => (
                 <button type="button" key={tag} onClick={() => setText((t) => `${t}${t && !t.endsWith(' ') ? ' ' : ''}${tag} `)}
                   className="cursor-pointer rounded-md border border-line px-1.5 py-1 font-mono text-[10px] text-dim hover:text-fg">{tag}</button>
@@ -159,6 +275,16 @@ export default function ChatDrawer() {
                 </button>
               )}
             </div>
+            {atts.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {atts.map((a) => (
+                  <span key={a.id} className="flex items-center gap-1 rounded-md border border-line bg-canvas-edge px-2 py-0.5 text-[11px] text-dim">
+                    <Paperclip className="size-3" />{a.title}
+                    <button type="button" onClick={() => setAtts(atts.filter((x) => x.id !== a.id))} className="cursor-pointer hover:text-fg"><X className="size-3" /></button>
+                  </span>
+                ))}
+              </div>
+            )}
             <div className="flex gap-2">
               <Input value={text} onChange={(e) => setText(e.target.value)} placeholder={t('chat.placeholder')} className="rounded-full" />
               <button type="submit" className="flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-full bg-accent text-accent-ink hover:bg-accent-hover" aria-label={t('chat.send')}>

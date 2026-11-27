@@ -1,8 +1,8 @@
 import {
-  Award, BookOpen, Check, ChevronRight, Clock, Crosshair, FlaskConical, Leaf, MapPin, Navigation, Package, Plus,
-  Shield, Sparkles, Users, X,
+  Award, BookOpen, Check, ChevronRight, Clock, Crosshair, FileText, FlaskConical, Leaf, Library, MapPin, Navigation,
+  Package, Plus, Search, Shield, Sparkles, Upload, Users, X,
 } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input, Select } from '@/components/ui/input'
@@ -11,7 +11,7 @@ import { api } from '@/lib/api'
 import { locale, t as tr, tx, useT } from '@/lib/i18n'
 import { cn, daysUntil, fmtDate } from '@/lib/utils'
 import { useLab } from '@/store'
-import type { Material, Quest, Route } from '@/types'
+import type { DocumentInfo, Knowledge, Material, Quest, Route, SearchHit } from '@/types'
 
 function dueLabel(iso: string | null) {
   const d = daysUntil(iso)
@@ -25,7 +25,7 @@ function dueLabel(iso: string | null) {
 function QuestCard({ q, kind }: { q: Quest; kind: 'mine' | 'pool' | 'done' }) {
   const s = useLab()
   const t = useT()
-  const [mode, setMode] = useState<null | 'reject' | 'escalate'>(null)
+  const [mode, setMode] = useState<null | 'reject' | 'escalate' | 'problem' | 'delegate'>(null)
   const [reason, setReason] = useState('')
   const act = async (action: string, r = '') => {
     const res = await api.post<{ xp: number }>(`/quests/${q.id}/action`, { user_id: s.meId, action, reason: r })
@@ -34,6 +34,8 @@ function QuestCard({ q, kind }: { q: Quest; kind: 'mine' | 'pool' | 'done' }) {
       s.refreshUsers()
     }
     if (action === 'escalate') s.toast(t('quest.escalated'))
+    if (action === 'delegate') s.toast(t('quest.delegated'))
+    if (action === 'problem') s.toast(t('quest.problemSent'))
     setMode(null)
     s.refreshQuests()
   }
@@ -53,6 +55,7 @@ function QuestCard({ q, kind }: { q: Quest; kind: 'mine' | 'pool' | 'done' }) {
             <span className="shrink-0 font-mono text-xs font-semibold text-accent">+{q.xp} XP</span>
           </div>
           {q.description && kind !== 'done' && <p className="mt-1 text-xs leading-relaxed text-dim">{q.description}</p>}
+          {q.problem && kind === 'mine' && <p className="mt-1 text-[11px] text-accent">{t('quest.problemReported', { text: q.problem })}</p>}
           {q.reason && kind === 'pool' && <p className="mt-1 text-[11px] text-accent">{t('quest.suggested', { reason: q.reason })}</p>}
           <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px] text-dim">
             <Badge variant={q.source === 'leader' || q.source === 'social' ? 'default' : 'accent'}>{t(`source.${q.source}`)}</Badge>
@@ -80,6 +83,8 @@ function QuestCard({ q, kind }: { q: Quest; kind: 'mine' | 'pool' | 'done' }) {
             <>
               <Button size="sm" onClick={() => act('complete')}><Check /> {t('quest.done')}</Button>
               <Button size="sm" variant="ghost" onClick={() => act('unassign')}>{t('quest.giveBack')}</Button>
+              <Button size="sm" variant="ghost" onClick={() => setMode('delegate')}>{t('quest.delegate')}</Button>
+              <Button size="sm" variant="ghost" onClick={() => setMode('problem')}>{t('quest.problem')}</Button>
               <Button size="sm" variant="ghost" onClick={() => setMode('escalate')}>{t('quest.escalate')}</Button>
             </>
           )}
@@ -88,7 +93,7 @@ function QuestCard({ q, kind }: { q: Quest; kind: 'mine' | 'pool' | 'done' }) {
       {mode && (
         <form className="mt-2.5 flex gap-1.5" onSubmit={(e) => { e.preventDefault(); act(mode, reason) }}>
           <Input autoFocus value={reason} onChange={(e) => setReason(e.target.value)} className="h-8 text-xs"
-            placeholder={mode === 'reject' ? t('quest.rejectWhy') : t('quest.problemWhat')} />
+            placeholder={mode === 'reject' ? t('quest.rejectWhy') : mode === 'delegate' ? t('quest.delegateNote') : t('quest.problemWhat')} />
           <Button size="sm" type="submit">{mode === 'reject' ? t('quest.reject') : t('common.send')}</Button>
           <Button size="sm" variant="ghost" type="button" onClick={() => setMode(null)}><X /></Button>
         </form>
@@ -289,6 +294,145 @@ export function MaterialRow({ m }: { m: Material }) {
   )
 }
 
+function AddSample() {
+  const s = useLab()
+  const t = useT()
+  const [open, setOpen] = useState(false)
+  const [label, setLabel] = useState('')
+  const [loc, setLoc] = useState('')
+  const [exp, setExp] = useState('')
+  if (!s.lab) return null
+  if (!open) return <Button variant="outline" size="sm" className="w-full border-dashed" onClick={() => setOpen(true)}><Plus /> {t('sample.add')}</Button>
+  return (
+    <form className="space-y-2 rounded-xl border border-line bg-elev/60 p-3" onSubmit={async (e) => {
+      e.preventDefault()
+      if (!label.trim() || !loc) return
+      const r = await api.post<{ id: string }>('/samples', { lab_id: s.labId, label, location_id: loc, owner_id: s.meId, experiment_id: exp || null })
+      s.toast(t('sample.created', { id: r.id }))
+      setLabel(''); setOpen(false)
+      await s.refreshLab()
+      s.set({ sampleId: r.id })
+    }}>
+      <Input value={label} onChange={(e) => setLabel(e.target.value)} placeholder={t('sample.label')} autoFocus />
+      <div className="grid grid-cols-2 gap-2">
+        <Select value={loc} onChange={(e) => setLoc(e.target.value)}>
+          <option value="">{t('sample.location')}</option>
+          {s.lab.equipment.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
+        </Select>
+        <Select value={exp} onChange={(e) => setExp(e.target.value)}>
+          <option value="">{t('sample.noProject')}</option>
+          {s.lab.experiments.map((x) => <option key={x.id} value={x.id}>{x.code} {x.title}</option>)}
+        </Select>
+      </div>
+      <div className="flex gap-2"><Button size="sm" type="submit">{t('sample.register')}</Button><Button size="sm" variant="ghost" type="button" onClick={() => setOpen(false)}>{t('common.cancel')}</Button></div>
+    </form>
+  )
+}
+
+export function DocumentUpload({ targetType, targetId, onDone, kind = 'auto' }: { targetType?: string; targetId?: string; onDone?: () => void; kind?: string }) {
+  const s = useLab()
+  const t = useT()
+  const [busy, setBusy] = useState(false)
+  return (
+    <label className={cn('flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-line-strong px-3 py-2 text-xs text-dim hover:text-fg', busy && 'opacity-50')}>
+      <Upload className="size-3.5" /> {busy ? t('docs.uploading') : t('docs.upload')}
+      <input type="file" className="hidden" disabled={busy} onChange={async (e) => {
+        const file = e.target.files?.[0]
+        if (!file) return
+        setBusy(true)
+        try {
+          await api.upload('/documents', { file, lab_id: s.labId, kind, target_type: targetType, target_id: targetId })
+          s.toast(t('docs.uploaded', { name: file.name }))
+          onDone?.()
+        } catch (err) {
+          s.toast((err as Error).message, 'plain')
+        } finally {
+          setBusy(false)
+          e.target.value = ''
+        }
+      }} />
+    </label>
+  )
+}
+
+export function DocumentList({ docs }: { docs: DocumentInfo[] }) {
+  const t = useT()
+  if (!docs.length) return <p className="text-xs text-muted">{t('docs.none')}</p>
+  return (
+    <div className="divide-y divide-line rounded-lg border border-line">
+      {docs.map((d) => (
+        <a key={d.id} href={`/api/documents/${d.id}/download`} target="_blank" rel="noreferrer" className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-hover">
+          <FileText className="size-4 text-accent" />
+          <span className="flex-1 truncate">{d.title}</span>
+          <span className="font-mono text-[10px] uppercase text-dim">{tx(`docs.kind.${d.kind}`, d.kind)}</span>
+          <span className="font-mono text-[10px] text-muted">{tx(`docs.status.${d.status}`, d.status)}</span>
+        </a>
+      ))}
+    </div>
+  )
+}
+
+function KnowledgeTab() {
+  const s = useLab()
+  const t = useT()
+  const [q, setQ] = useState('')
+  const [kb, setKb] = useState<Knowledge[] | null>(null)
+  const [hits, setHits] = useState<{ engine: string; results: SearchHit[] } | null>(null)
+  const [docs, setDocs] = useState<DocumentInfo[]>([])
+  const loadDocs = () => api.get<DocumentInfo[]>(`/documents?lab_id=${s.labId}`).then(setDocs)
+  const search = async (e?: React.FormEvent) => {
+    e?.preventDefault()
+    const [k, h] = await Promise.all([
+      api.get<Knowledge[]>(`/knowledge?lab_id=${s.labId}&q=${encodeURIComponent(q)}`),
+      q.trim() ? api.get<{ engine: string; results: SearchHit[] }>(`/documents/search?lab_id=${s.labId}&q=${encodeURIComponent(q)}`) : Promise.resolve(null),
+    ])
+    setKb(k)
+    setHits(h)
+    loadDocs()
+  }
+  useEffect(() => { search() }, [s.labId])
+  return (
+    <div className="space-y-4">
+      <form onSubmit={search} className="flex gap-2">
+        <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t('kb.placeholder')} />
+        <Button type="submit" size="sm" className="h-9"><Search /></Button>
+      </form>
+      {hits && (
+        <section className="space-y-2">
+          <h4 className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-[0.08em] text-dim"><FileText className="size-3.5" /> {t('kb.inDocs')} <span className="font-mono normal-case text-muted">({hits.engine})</span></h4>
+          {hits.results.length === 0 && <p className="text-xs text-muted">{t('kb.noHits')}</p>}
+          {hits.results.map((h, i) => (
+            <a key={i} href={`/api/documents/${h.document_id}/download`} target="_blank" rel="noreferrer" className="block rounded-xl border border-line bg-elev/60 p-3 hover:border-line-strong">
+              <p className="text-sm font-medium">{h.title}</p>
+              <p className="mt-1 line-clamp-4 whitespace-pre-line text-xs text-dim">{h.text}</p>
+            </a>
+          ))}
+        </section>
+      )}
+      <section className="space-y-2">
+        <h4 className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-[0.08em] text-dim"><BookOpen className="size-3.5" /> {t('kb.solved')}</h4>
+        {kb?.length === 0 && <p className="text-xs text-muted">{t('kb.noHits')}</p>}
+        {kb?.map((k) => (
+          <div key={k.id} className="rounded-xl border border-line bg-elev/60 p-3 text-sm">
+            <p className="font-medium">{k.problem}</p>
+            {k.cause && <p className="mt-1 text-xs text-dim"><span className="uppercase tracking-wider">{t('eq.cause')}:</span> {k.cause}</p>}
+            <p className="mt-1 text-xs"><span className="uppercase tracking-wider text-accent">{t('eq.solution')}:</span> {k.solution}</p>
+            <div className="mt-2 flex items-center justify-between text-[11px] text-dim">
+              {k.equipment_id ? <button onClick={() => s.focus(k.equipment_id!, true)} className="cursor-pointer hover:text-fg"><Crosshair className="mr-1 inline size-3" />{k.equipment}</button> : <span />}
+              <span className="font-mono">{k.helped_by} · {fmtDate(k.date)}</span>
+            </div>
+          </div>
+        ))}
+      </section>
+      <section className="space-y-2">
+        <h4 className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-[0.08em] text-dim"><Library className="size-3.5" /> {t('docs.title')}</h4>
+        <DocumentUpload onDone={() => setTimeout(loadDocs, 800)} />
+        <DocumentList docs={docs} />
+      </section>
+    </div>
+  )
+}
+
 function InventoryTab() {
   const s = useLab()
   const t = useT()
@@ -307,8 +451,9 @@ function InventoryTab() {
       </div>
       {shown.map((m) => <MaterialRow key={m.id} m={m} />)}
       <h4 className="pt-2 text-xs font-medium uppercase tracking-[0.08em] text-dim">{t('stock.samples')}</h4>
+      <AddSample />
       {s.lab.samples.map((x) => (
-        <button key={x.id} onClick={() => s.focus(x.location_id)} className="flex w-full cursor-pointer items-center gap-2 rounded-lg border border-line px-3 py-2 text-left text-xs hover:border-line-strong">
+        <button key={x.id} onClick={() => s.set({ sampleId: x.id })} className="flex w-full cursor-pointer items-center gap-2 rounded-lg border border-line px-3 py-2 text-left text-xs hover:border-line-strong">
           <span className="font-mono text-accent">{x.id}</span>
           <span className="flex-1 truncate">{x.label}</span>
           <span className="text-dim">{x.location_id}</span>
@@ -397,6 +542,7 @@ export default function SidePanel() {
             <TabsTrigger value="quests"><Sparkles /> {t('tabs.quests')}</TabsTrigger>
             <TabsTrigger value="projects"><FlaskConical /> {t('tabs.projects')}</TabsTrigger>
             <TabsTrigger value="inventory"><Package /> {t('tabs.stock')}</TabsTrigger>
+            <TabsTrigger value="knowledge"><BookOpen /> {t('tabs.knowledge')}</TabsTrigger>
             <TabsTrigger value="me"><Award /> {t('tabs.me')}</TabsTrigger>
           </TabsList>
           <button onClick={() => s.set({ sideOpen: false })} className="cursor-pointer rounded-lg p-1.5 text-dim hover:bg-hover hover:text-fg"><X className="size-4" /></button>
@@ -405,6 +551,7 @@ export default function SidePanel() {
           <TabsContent value="quests"><QuestsTab /></TabsContent>
           <TabsContent value="projects"><ProjectsTab /></TabsContent>
           <TabsContent value="inventory"><InventoryTab /></TabsContent>
+          <TabsContent value="knowledge"><KnowledgeTab /></TabsContent>
           <TabsContent value="me"><ProfileTab /></TabsContent>
         </div>
       </Tabs>
