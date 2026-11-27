@@ -99,8 +99,8 @@ def predict_maintenance(db: Session, e: Equipment) -> dict:
     next_inspection = min(candidates) if candidates else None
     reason = None
     if next_inspection:
-        reason = ("certificate expiry" if next_inspection == e.cert_expiry else
-                  "scheduled service" if next_inspection == e.next_service else "periodic reading verification")
+        reason = ("certificate" if next_inspection == e.cert_expiry else
+                  "service" if next_inspection == e.next_service else "verification")
     return {
         "failures_recorded": len(uniq),
         "mtbf_days": mtbf,
