@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { api } from '@/lib/api'
 import { t, type TKey } from '@/lib/i18n'
-import type { Channel, LabDetail, LabSummary, Layer, Message, QuestBoard, Route, User } from '@/types'
+import type { AppNotification, Channel, LabDetail, LabSummary, Layer, Message, QuestBoard, Route, User } from '@/types'
 
 type CameraAction = { type: 'rotate'; value: number } | { type: 'zoom'; value: number } | { type: 'reset' } | { type: 'focus'; id: string }
 export type CameraCmd = CameraAction & { n: number }
@@ -37,6 +37,9 @@ interface State {
   sideTab: string
   equipmentId: string | null
   materialId: string | null
+  sampleId: string | null
+  notifications: AppNotification[]
+  adminTab: string
   reportFor: string | null | undefined
   adminOpen: boolean
   scanOpen: boolean
@@ -59,6 +62,8 @@ interface State {
   refreshLab: () => Promise<void>
   refreshQuests: () => Promise<void>
   refreshUsers: () => Promise<void>
+  refreshLabs: () => Promise<void>
+  loadNotifications: () => Promise<void>
   loadChannels: () => Promise<void>
   openChannel: (id: string) => Promise<void>
   receive: (m: Message) => void
@@ -82,6 +87,9 @@ export const useLab = create<State>((set, get) => ({
   sideTab: 'quests',
   equipmentId: null,
   materialId: null,
+  sampleId: null,
+  notifications: [],
+  adminTab: 'overview',
   reportFor: undefined,
   adminOpen: false,
   scanOpen: false,
@@ -110,6 +118,8 @@ export const useLab = create<State>((set, get) => ({
     set({ meId: id, messages: {}, activeChannel: null, route: null })
     get().refreshQuests()
     get().loadChannels()
+    get().loadNotifications()
+    get().refreshLabs()
   },
 
   selectLab: async (id) => {
@@ -118,7 +128,7 @@ export const useLab = create<State>((set, get) => ({
     const lab = await api.get<LabDetail>(`/labs/${id}`)
     set({ lab })
     get().camera({ type: 'reset' })
-    await Promise.all([get().refreshQuests(), get().loadChannels()])
+    await Promise.all([get().refreshQuests(), get().loadChannels(), get().loadNotifications()])
   },
 
   refreshLab: async () => {
@@ -135,6 +145,13 @@ export const useLab = create<State>((set, get) => ({
   },
 
   refreshUsers: async () => set({ users: await api.get<User[]>('/users') }),
+
+  refreshLabs: async () => set({ labs: await api.get<LabSummary[]>('/labs') }),
+
+  loadNotifications: async () => {
+    const notifications = await api.get<AppNotification[]>(`/notifications?user_id=${get().meId}`)
+    set({ notifications })
+  },
 
   loadChannels: async () => {
     const { meId, labId } = get()
@@ -161,7 +178,8 @@ export const useLab = create<State>((set, get) => ({
     const relevant =
       m.channel === `lab:${s.labId}` ||
       m.channel.startsWith('eq:') ||
-      (m.channel.startsWith('dm:') && m.channel.split(':').includes(s.meId))
+      (m.channel.startsWith('dm:') && m.channel.split(':').includes(s.meId))||
+      (m.channel.startsWith('grp:') && (s.channels.some((c) => c.id === m.channel) || s.activeChannel === m.channel))
     if (!relevant) return
     const list = s.messages[m.channel]
     const messages = list ? { ...s.messages, [m.channel]: [...list, m] } : s.messages
@@ -212,7 +230,11 @@ export function connectRealtime() {
         s.refreshUsers()
       }
       if (data.type === 'quests' && data.lab_id === s.labId) s.refreshQuests()
-      if (data.type === 'notification' && data.user_id === s.meId && data.kind !== 'mention') s.toast(data.title, 'plain')
+      if (data.type === 'notification' && data.user_id === s.meId) {
+        if (data.kind !== 'mention') s.toast(data.title, 'plain')
+        s.loadNotifications()
+      }
+      if (data.type === 'labs') s.refreshLabs()
       if (data.type === 'incident' && data.lab_id === s.labId) {
         const cat = data.category ? t(`report.cat.${data.category}` as TKey) : ''
         s.toast(`🚨 ${t(`priority.${data.priority}` as TKey).toUpperCase()} — ${data.who ?? t('common.anonymous')}: ${cat} · ${data.where ?? ''}`)

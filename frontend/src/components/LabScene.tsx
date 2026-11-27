@@ -171,17 +171,78 @@ function Room({ lab }: { lab: LabDetail }) {
   )
 }
 
-function GlbShell({ url }: { url: string }) {
-  const { scene } = useGLTF(url)
-  useEffect(() => {
-    scene.traverse((o) => {
-      if ((o as THREE.Mesh).isMesh) {
-        o.castShadow = true
-        o.receiveShadow = true
+function GlbModel({ lab }: { lab: LabDetail }) {
+  const { scene } = useGLTF(lab.glb_url!)
+  const { highlightId, set } = useLab()
+  const [hover, setHover] = useState<string | null>(null)
+  const meta = lab.model_meta
+  const nodeToAsset = useMemo(() => {
+    const m = new Map<string, string>()
+    Object.entries(meta?.nodes ?? {}).forEach(([node, id]) => m.set(THREE.PropertyBinding.sanitizeNodeName(node), id))
+    return m
+  }, [meta])
+  const model = useMemo(() => {
+    const root = scene.clone(true)
+    root.traverse((o) => {
+      const mesh = o as THREE.Mesh
+      if (!mesh.isMesh) return
+      mesh.castShadow = true
+      mesh.receiveShadow = true
+      mesh.material = Array.isArray(mesh.material) ? mesh.material.map((x) => x.clone()) : mesh.material.clone()
+      let p: THREE.Object3D | null = mesh
+      while (p) {
+        const id = nodeToAsset.get(p.name)
+        if (id) {
+          mesh.userData.assetId = id
+          break
+        }
+        p = p.parent
       }
     })
-  }, [scene])
-  return <primitive object={scene} />
+    return root
+  }, [scene, nodeToAsset])
+  const statusById = useMemo(() => new Map(lab.equipment.map((e) => [e.id, e.status])), [lab.equipment])
+  useEffect(() => {
+    model.traverse((o) => {
+      const mesh = o as THREE.Mesh
+      if (!mesh.isMesh) return
+      const id = mesh.userData.assetId as string | undefined
+      const lit = !!id && (id === hover || id === highlightId)
+      const alert = !!id && statusById.get(id) === 'alert'
+      const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
+      mats.forEach((m) => {
+        const std = m as THREE.MeshStandardMaterial
+        if (!std.emissive) return
+        std.emissive.set(lit || alert ? ACCENT : '#000000')
+        std.emissiveIntensity = lit ? 0.35 : alert ? 0.15 : 0
+      })
+    })
+  }, [model, hover, highlightId, statusById])
+  const offset = meta?.offset ?? [0, 0, 0]
+  const assetOf = (o: THREE.Object3D) => o.userData.assetId as string | undefined
+  return (
+    <primitive
+      object={model}
+      position={[-offset[0] - lab.width / 2, -offset[1], -offset[2] - lab.depth / 2]}
+      onClick={(ev: ThreeEvent<MouseEvent>) => {
+        const id = assetOf(ev.object)
+        if (!id || ev.delta > 5) return
+        ev.stopPropagation()
+        set({ equipmentId: id, highlightId: id })
+      }}
+      onPointerOver={(ev: ThreeEvent<PointerEvent>) => {
+        const id = assetOf(ev.object)
+        if (!id) return
+        ev.stopPropagation()
+        setHover(id)
+        document.body.style.cursor = 'pointer'
+      }}
+      onPointerOut={() => {
+        setHover(null)
+        document.body.style.cursor = ''
+      }}
+    />
+  )
 }
 
 class SafeBoundary extends Component<{ children: ReactNode; fallback: ReactNode }, { failed: boolean }> {
@@ -473,7 +534,7 @@ function CameraRig({ lab }: { lab: LabDetail }) {
       }
     } else {
       let target1 = new THREE.Vector3()
-      let pos1 = DEFAULT_CAM.clone()
+      let pos1 = DEFAULT_CAM.clone().multiplyScalar(Math.max(1, Math.max(lab.width, lab.depth * 1.4) / 20))
       if (cmd.type === 'focus') {
         const e = lab.equipment.find((x) => x.id === cmd.id)
         if (!e) return
@@ -519,7 +580,7 @@ function CameraRig({ lab }: { lab: LabDetail }) {
       zoomSpeed={0.9}
       panSpeed={0.7}
       minDistance={4}
-      maxDistance={36}
+      maxDistance={Math.max(36, Math.max(lab.width, lab.depth) * 2)}
       minPolarAngle={0.18}
       maxPolarAngle={Math.PI / 2.15}
       touches={{ ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN }}
@@ -530,10 +591,11 @@ function CameraRig({ lab }: { lab: LabDetail }) {
 function Scene({ lab }: { lab: LabDetail }) {
   const world = useWorld(lab)
   const set = useLab((s) => s.set)
+  const modelAssets = useMemo(() => new Set(lab.glb_url ? Object.values(lab.model_meta?.nodes ?? {}) : []), [lab.glb_url, lab.model_meta])
   return (
     <>
       <color attach="background" args={['#0B0F12']} />
-      <fog attach="fog" args={['#0B0F12', 30, 60]} />
+      <fog attach="fog" args={['#0B0F12', 30 * Math.max(1, lab.width / 20), 60 * Math.max(1, lab.width / 20)]} />
       <ambientLight intensity={0.7} />
       <directionalLight
         position={[8, 14, 10]}
@@ -550,13 +612,13 @@ function Scene({ lab }: { lab: LabDetail }) {
         {lab.glb_url ? (
           <SafeBoundary fallback={<Room lab={lab} />}>
             <Suspense fallback={<Room lab={lab} />}>
-              <GlbShell url={lab.glb_url} />
+              <GlbModel lab={lab} />
             </Suspense>
           </SafeBoundary>
         ) : (
           <Room lab={lab} />
         )}
-        {lab.equipment.map((e) => (
+        {lab.equipment.filter((e) => !modelAssets.has(e.id)).map((e) => (
           <EquipmentMesh key={e.id} e={e} all={lab.equipment} world={world} />
         ))}
       </group>
@@ -582,7 +644,7 @@ export default function LabScene() {
   const lab = useLab((s) => s.lab)
   return (
     <div className="absolute inset-0 touch-none">
-      <Canvas shadows dpr={[1, 2]} camera={{ position: DEFAULT_CAM.toArray(), fov: 38, near: 0.1, far: 120 }}>
+      <Canvas shadows dpr={[1, 2]} camera={{ position: DEFAULT_CAM.toArray(), fov: 38, near: 0.1, far: 400 }}>
         {lab && <Scene key={lab.id} lab={lab} />}
       </Canvas>
       {lab && <Overlay key={lab.id} lab={lab} />}

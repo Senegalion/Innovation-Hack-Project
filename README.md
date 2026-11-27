@@ -62,6 +62,25 @@ backend/app/
 
 **Optional features (stubs that return `{"enabled": false}`, never an exception):** AI answers over documentation (`POST /api/assistant/ai`), automatic inspection notifications (`/api/notifications/inspections`), MCP (`/mcp`, `/api/mcp/tools`), NFC tags (`POST /api/nfc/{tag}`, which points to `/api/scan`).
 
+## Your own labs (3D models)
+
+1. Sign in as a manager (avatar menu → Dr. Anna Kowalska) and open **Management panel → Labs & map**.
+2. **New laboratory**: enter a code, name and size. The lab appears in the lab dropdown.
+3. **Upload your lab 3D model**: a GLB from Blender (OBJ/PLY/STL are converted to GLB). The backend:
+   - aligns the model to the lab coordinates and resizes the lab to the model bounds,
+   - creates equipment and workstations from top-level objects (objects named like asset IDs, e.g. `HPLC-04`; walls, floor and ceiling are skipped),
+   - links each 3D object to its asset, so clicking the object opens the equipment card,
+   - regenerates the 2D floor plan used for routing.
+4. Optional: in Blender, add custom properties to objects (`smartlab_id`, `smartlab_name`, `smartlab_kind`, `smartlab_category`, `smartlab_storage`, `smartlab_skip`) and run:
+   ```bash
+   blender lab.blend --background --python tools/blender/smartlab_export.py -- out/ --upload http://localhost:8000 lab-lab-305 u-anna
+   ```
+   This exports the GLB plus a `*.smartlab.json` manifest and uploads both (`POST /api/labs/{id}/model`).
+5. Fine-tune in the same tab: equipment positions and sizes, zones (closed / restricted by role), and safety points (exits, eyewash, shower, first aid, extinguisher).
+6. **AI reconstruction from a scan**: upload a point cloud or mesh, run segmentation, then add any detected objects that don't match existing equipment.
+
+API: `POST /api/labs`, `POST|DELETE /api/labs/{id}/model`, `PUT /api/labs/{id}/spaces/{space}`, `PATCH /api/labs/{id}`, `POST /api/labs/{id}/assets`, `PATCH|DELETE /api/assets/{id}`.
+
 ## Stack
 - **Backend:** Python, FastAPI, SQLAlchemy, PostgreSQL, WebSocket, NumPy + trimesh (3D), Qdrant, S3 (boto3; SeaweedFS in Docker), Docling / pypdf, segno (QR)
 - **Frontend:** React 19, TypeScript, Vite, Tailwind v4, shadcn-style components (Radix), Three.js / React Three Fiber / drei, Zustand

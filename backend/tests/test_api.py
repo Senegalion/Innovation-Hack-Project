@@ -211,6 +211,27 @@ def test_language_rendering(c):
     assert r["highlight"] == "CAB-F" and "is stored in" in r["answer"]
 
 
+def test_custom_lab_from_3d_model(c):
+    assert c.post("/api/labs", json={"code": "LAB-X", "name": "Nowe lab"}, headers=INTERN).status_code == 403
+    lab = c.post("/api/labs", json={"code": "LAB-X", "name": "Laboratorium testowe", "building": "C"},
+                 headers=ADMIN).json()
+    assert lab["id"] == "lab-lab-x"
+    glb = c.get("/api/labs/lab-204/export/model.glb").content
+    manifest = b'[{"node": "FRZ-80", "id": "ULT-1", "name": "Zamrazarka testowa", "kind": "freezer"}]'
+    r = c.post(f"/api/labs/{lab['id']}/model", headers=ADMIN,
+               files={"file": ("lab.glb", glb, "model/gltf-binary"), "manifest": ("m.json", manifest, "application/json")})
+    assert r.status_code == 200, r.text
+    res = r.json()
+    assert len(res["created"]) >= 12 and "ULT-1" in res["created"]
+    detail = c.get(f"/api/labs/{lab['id']}").json()
+    assert detail["glb_url"].startswith("/api/documents/") and detail["model_meta"]["nodes"]["FRZ-80"] == "ULT-1"
+    assert 19 < detail["width"] < 21 and any(e["kind"] == "bench" for e in detail["equipment"])
+    assert c.get(detail["glb_url"]).content[:4] == b"glTF"
+    route = c.post("/api/route", json={"lab_id": lab["id"], "stops": ["ULT-1"]}, headers=ADMIN).json()
+    assert route["order"] == ["ULT-1"] and route["distance_m"] > 0
+    assert c.delete(f"/api/labs/{lab['id']}/model", headers=ADMIN).json()["ok"]
+
+
 def test_optional_stubs_do_not_fail(c):
     for method, url in [("post", "/api/assistant/ai"), ("get", "/api/notifications/inspections"), ("get", "/mcp"),
                         ("get", "/api/mcp/tools"), ("post", "/api/nfc/TAG1")]:

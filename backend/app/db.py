@@ -7,7 +7,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
 from .config import DATABASE_URL, SEED_DEMO
 
-SCHEMA_VERSION = "3"
+SCHEMA_VERSION = "4"
 log = logging.getLogger("smartlab.db")
 
 engine = create_engine(
@@ -59,6 +59,7 @@ class Lab(Base):
     glb_url: Mapped[str | None] = mapped_column(String, nullable=True)
     points: Mapped[list] = mapped_column(JSON, default=list)
     floorplan: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    model_meta: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
 
 class Space(Base):
