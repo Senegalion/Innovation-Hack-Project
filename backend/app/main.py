@@ -1,3 +1,4 @@
+import asyncio
 import logging
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -8,6 +9,7 @@ from .db import init_db
 from .realtime import hub
 from .routers import admin, assets, documents, incidents, labs, mcp, optional, quests, social, spatial
 from .seed import seed
+from .services import inspections
 
 logging.basicConfig(level=logging.INFO)
 
@@ -19,10 +21,11 @@ for r in (labs, assets, quests, social, incidents, admin, documents, spatial, mc
 
 
 @app.on_event("startup")
-def startup():
+async def startup():
     init_db()
     if SEED_DEMO:
         seed()
+    app.state.inspection_task = asyncio.create_task(inspections.reminder_loop())
 
 
 @app.get("/api/health")

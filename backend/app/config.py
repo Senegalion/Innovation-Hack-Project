@@ -29,3 +29,8 @@ AI_TIMEOUT = float(os.getenv("AI_TIMEOUT", "60"))
 # MCP server: browser Origins allowed to call /mcp (requests without an Origin header, e.g. desktop clients, are
 # always allowed). Comma-separated hostnames.
 MCP_ALLOWED_ORIGINS = [h.strip() for h in os.getenv("MCP_ALLOWED_ORIGINS", "localhost,127.0.0.1").split(",") if h.strip()]
+
+# Automatic inspection reminders (certificates, services, verification checks). Items due within
+# INSPECTION_WINDOW_DAYS are notified; the background check runs every INSPECTION_CHECK_HOURS (0 = off).
+INSPECTION_WINDOW_DAYS = int(os.getenv("INSPECTION_WINDOW_DAYS", "14"))
+INSPECTION_CHECK_HOURS = float(os.getenv("INSPECTION_CHECK_HOURS", "6"))

@@ -5,10 +5,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from .. import config
 from ..db import Channel, Document, Lab, Message, Notification, Role, User
-from ..deps import current_user, first_name, get_db, name_of, ser
+from ..deps import current_user, first_name, get_db, name_of, require, ser
 from ..i18n import DEFAULT_LANG, get_lang, tr
 from ..realtime import hub, notify
+from ..services import inspections
 from ..services.assets import asset
 from ..services.gamification import award, profile
 from ..services.people import competence_map, onboarding, recommend_helpers
@@ -229,6 +231,24 @@ def notifications(user_id: str | None = None, unread: bool = False, db: Session 
     if unread:
         q = q.filter_by(read=0)
     return [ser(n) for n in q.order_by(Notification.at.desc()).limit(100)]
+
+
+@router.get("/notifications/inspections")
+def inspection_list(lab_id: str | None = None, days: int | None = None, db: Session = Depends(get_db),
+                    lang: str = Depends(get_lang)):
+    items = inspections.due_inspections(db, lab_id, days)
+    for i in items:
+        i["title"] = inspections.title_for(i, lang)
+    return {"enabled": True, "window_days": days if days is not None else config.INSPECTION_WINDOW_DAYS,
+            "check_every_hours": config.INSPECTION_CHECK_HOURS, "items": items}
+
+
+@router.post("/notifications/inspections/run")
+async def inspection_run(lab_id: str | None = None, days: int | None = None, db: Session = Depends(get_db),
+                         _: User = Depends(require("leader"))):
+    result = inspections.send_reminders(db, lab_id, days)
+    await hub.flush()
+    return result
 
 
 @router.post("/notifications/{nid}/read")
