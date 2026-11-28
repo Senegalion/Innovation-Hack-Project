@@ -55,12 +55,13 @@ backend/app/
 | Newcomer side quests and intern alerts | An intern's first use of an instrument, or taking a hazardous reagent, notifies the responsible person and the mentor and creates an "Assist …" quest | |
 | Onboarding (tips per role, who does what, mentor) | `GET /api/onboarding/{user}` | Onboarding dialog |
 | Notifications | `GET /api/notifications`, pushed live over `/ws` | Toasts |
+| **Automatic inspection reminders** | Certificates, services and reading verifications due within 14 days (or overdue) notify the responsible person, service technicians and the lab manager, once per item and day. A background check runs every `INSPECTION_CHECK_HOURS` (default 6, `0` = off). `GET /api/notifications/inspections?lab_id=`, `POST /api/notifications/inspections/run` (leader) | Management panel → Upcoming inspections, bell menu |
 | Gamification: rules set by management, badges, team challenges, ESG | `/api/point-rules` (admin), `/api/challenges`, `GET /api/admin/stats` → `esg` | Me tab, Management panel |
 | Escalation, roles, admin panel | `POST /api/incidents` returns the steps to take and the nearest eyewash / shower / exit for high and critical reports. Admin: `/api/users`, `/api/roles`, `/api/labs/{id}/assets`, `/api/assets/{id}`, `/api/labs/{id}/spaces/{id}`, `PATCH /api/labs/{id}` | Management panel |
 | Documents (Docling, S3, Qdrant) | `POST /api/documents` → stored in S3 → Docling (or pypdf) → chunked → indexed in Qdrant. `GET /api/documents/search` | |
 | Assistant "where is…?" (EN/PL) | `POST /api/assistant`: matches devices, reagents, samples, spaces and safety points, and adds relevant documentation snippets | Bottom search bar |
 
-**Optional features (stubs that return `{"enabled": false}`, never an exception):** AI answers over documentation (`POST /api/assistant/ai`), automatic inspection notifications (`/api/notifications/inspections`), MCP (`/mcp`, `/api/mcp/tools`), NFC tags (`POST /api/nfc/{tag}`, which points to `/api/scan`).
+**Optional features (stubs that return `{"enabled": false}`, never an exception):** AI answers over documentation (`POST /api/assistant/ai`), MCP (`/mcp`, `/api/mcp/tools`), NFC tags (`POST /api/nfc/{tag}`, which points to `/api/scan`).
 
 ## Your own labs (3D models)
 
