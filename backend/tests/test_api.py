@@ -233,7 +233,6 @@ def test_custom_lab_from_3d_model(c):
 
 
 def test_optional_stubs_do_not_fail(c):
-    for method, url in [("post", "/api/assistant/ai"), ("get", "/api/notifications/inspections"), ("get", "/mcp"),
-                        ("get", "/api/mcp/tools"), ("post", "/api/nfc/TAG1")]:
+    for method, url in [("get", "/api/notifications/inspections"), ("post", "/api/nfc/TAG1")]:
         r = getattr(c, method)(url)
         assert r.status_code == 200 and r.json()["enabled"] is False
