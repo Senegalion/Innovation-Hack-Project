@@ -233,7 +233,27 @@ def test_custom_lab_from_3d_model(c):
 
 
 def test_optional_stubs_do_not_fail(c):
-    for method, url in [("post", "/api/assistant/ai"), ("get", "/api/notifications/inspections"), ("get", "/mcp"),
+    for method, url in [("post", "/api/assistant/ai"), ("get", "/mcp"),
                         ("get", "/api/mcp/tools"), ("post", "/api/nfc/TAG1")]:
         r = getattr(c, method)(url)
         assert r.status_code == 200 and r.json()["enabled"] is False
+
+
+def test_inspection_reminders(c):
+    items = c.get("/api/notifications/inspections", params={"lab_id": "lab-204"}).json()
+    assert items["enabled"] is True and items["items"]
+    frz = [i for i in items["items"] if i["equipment_id"] == "FRZ-80" and i["kind"] == "certificate"]
+    assert frz and 0 <= frz[0]["days_left"] <= 14 and frz[0]["title"].startswith("Certyfikat")
+    en = c.get("/api/notifications/inspections", params={"lab_id": "lab-204"}, headers={"Accept-Language": "en"}).json()
+    assert any(i["title"].startswith("Certificate") for i in en["items"])
+    assert all(i["days_left"] <= 14 for i in items["items"])
+    assert c.post("/api/notifications/inspections/run", params={"lab_id": "lab-204"}, headers=INTERN).status_code == 403
+    first = c.post("/api/notifications/inspections/run", params={"lab_id": "lab-204"}, headers=LEADER).json()
+    assert first["notifications"] > 0
+    again = c.post("/api/notifications/inspections/run", params={"lab_id": "lab-204"}, headers=LEADER).json()
+    assert again["notifications"] == 0 and again["skipped"] >= first["notifications"]
+    resp = frz[0]["responsible_id"]
+    notes = c.get("/api/notifications", params={"user_id": resp}).json()
+    assert any(n["kind"] == "inspection" and n["ref_type"] == "equipment" and n["ref_id"] == "FRZ-80" for n in notes)
+    piotr = c.get("/api/notifications", params={"user_id": "u-piotr"}).json()
+    assert any(n["kind"] == "inspection" for n in piotr)

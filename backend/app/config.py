@@ -16,3 +16,8 @@ SEGMENTATION_URL = os.getenv("SEGMENTATION_URL")
 SEGMENTATION_METHOD = os.getenv("SEGMENTATION_METHOD", "geometric")
 EMERGENCY_NUMBER = os.getenv("EMERGENCY_NUMBER", "112")
 SEED_DEMO = os.getenv("SEED_DEMO", "1") == "1"
+
+# Automatic inspection reminders (certificates, services, verification checks). Items due within
+# INSPECTION_WINDOW_DAYS are notified; the background check runs every INSPECTION_CHECK_HOURS (0 = off).
+INSPECTION_WINDOW_DAYS = int(os.getenv("INSPECTION_WINDOW_DAYS", "14"))
+INSPECTION_CHECK_HOURS = float(os.getenv("INSPECTION_CHECK_HOURS", "6"))
