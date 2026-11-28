@@ -61,6 +61,10 @@ const en = {
   'view.zoomIn': 'Zoom in',
 
   'assistant.placeholder': 'Ask SMARTLAB — “where is acetonitrile?”',
+  'assistant.thinking': 'Checking the lab data…',
+  'assistant.followUp': 'You can ask a follow-up',
+  'assistant.close': 'Close answer',
+  'assistant.error': 'The assistant is unavailable: {error}',
 
   'pin.items': '{n} items',
   'pin.alerts': '{n} alerts',
@@ -645,6 +649,10 @@ const pl: Record<TKey, string> = {
   'view.zoomIn': 'Przybliż',
 
   'assistant.placeholder': 'Zapytaj SMARTLAB — „gdzie jest acetonitryl?”',
+  'assistant.thinking': 'Sprawdzam dane laboratorium…',
+  'assistant.followUp': 'Możesz dopytać',
+  'assistant.close': 'Zamknij odpowiedź',
+  'assistant.error': 'Asystent jest niedostępny: {error}',
 
   'pin.items': 'pozycje: {n}',
   'pin.alerts': 'alerty: {n}',

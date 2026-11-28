@@ -232,12 +232,6 @@ def test_custom_lab_from_3d_model(c):
     assert c.delete(f"/api/labs/{lab['id']}/model", headers=ADMIN).json()["ok"]
 
 
-def test_optional_stubs_do_not_fail(c):
-    for method, url in [("post", "/api/assistant/ai"), ("get", "/mcp"), ("get", "/api/mcp/tools")]:
-        r = getattr(c, method)(url)
-        assert r.status_code == 200 and r.json()["enabled"] is False
-
-
 def test_nfc_tags_resolve_records_and_tag_id(c):
     r = c.post("/api/nfc/04:A2:19:7F", json={"records": ["https://lab.example/?scan=HPLC-04", "HPLC-04"]},
                headers=INTERN).json()

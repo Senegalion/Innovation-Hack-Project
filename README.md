@@ -16,7 +16,7 @@ WITH_DOCLING=1 docker compose up --build       # also installs Docling for PDF p
 ```bash
 cd backend && python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
 .venv/bin/uvicorn app.main:app --reload --port 8000
-.venv/bin/pytest                               # 16 end-to-end API tests
+.venv/bin/pytest                               # end-to-end API tests
 
 cd frontend && npm install && npm run dev      # http://localhost:5173 (proxies /api and /ws to 127.0.0.1:8000)
 npm run dev:https                              # same over HTTPS (self-signed) for phones: camera QR + NFC
@@ -62,8 +62,19 @@ backend/app/
 | Escalation, roles, admin panel | `POST /api/incidents` returns the steps to take and the nearest eyewash / shower / exit for high and critical reports. Admin: `/api/users`, `/api/roles`, `/api/labs/{id}/assets`, `/api/assets/{id}`, `/api/labs/{id}/spaces/{id}`, `PATCH /api/labs/{id}` | Management panel |
 | Documents (Docling, S3, Qdrant) | `POST /api/documents` → stored in S3 → Docling (or pypdf) → chunked → indexed in Qdrant. `GET /api/documents/search` | |
 | Assistant "where is…?" (EN/PL) | `POST /api/assistant`: matches devices, reagents, samples, spaces and safety points, and adds relevant documentation snippets | Bottom search bar |
+| **AI assistant (Claude)** | `POST /api/assistant/ai` (`lab_id`, `question`, optional `history`): Claude answers using read-only lab tools (find in lab, search documents, device and reagent cards, alerts, Smart Help, knowledge base, incidents, my quests). Falls back to the keyword assistant when no API key is set or the API fails. `GET /api/assistant/status` | Bottom search bar (AI badge, document links, follow-up questions) |
+| **MCP server** | `POST /mcp` (Streamable HTTP, JSON-RPC). The same read-only tools plus `list_labs`, for Claude Desktop, Claude Code or any MCP client. `GET /api/mcp/tools` lists them | |
 
-**Optional features (stubs that return `{"enabled": false}`, never an exception):** AI answers over documentation (`POST /api/assistant/ai`), MCP (`/mcp`, `/api/mcp/tools`).
+## AI assistant and MCP
+Export `ANTHROPIC_API_KEY` before starting the backend (Docker Compose also reads it from `.env` in the repo root). The bottom search bar then answers with Claude (model `claude-opus-5-5`, change with `AI_MODEL`; `AI_EFFORT=low` keeps answers fast). Without a key, or if the API call fails, the keyword assistant answers as before. `AI_ENABLED=0` turns AI off, `AI_ENABLED=1` forces it on when credentials come from an `ant auth login` profile.
+
+The assistant only reads data: its tools never change the database. It looks facts up before answering, names devices by ID so the twin highlights them, links the manuals and SDS it used, and sends people to the emergency procedure for spills, exposure and fire.
+
+Connect an MCP client to the same tools:
+```bash
+claude mcp add --transport http smartlab http://localhost:8000/mcp   # Claude Code
+```
+In Claude Desktop add a remote MCP server with the URL `http://localhost:8000/mcp`. Tools: `list_labs`, `find_in_lab`, `search_documents`, `list_equipment`, `get_equipment`, `list_material_alerts`, `get_material`, `find_helpers`, `search_knowledge_base`, `list_open_incidents`, `list_quests` (pass `user_id` or the `X-User-Id` header). Browser requests are accepted only from the origins in `MCP_ALLOWED_ORIGINS` (default `localhost,127.0.0.1`).
 
 ## Your own labs (3D models)
 

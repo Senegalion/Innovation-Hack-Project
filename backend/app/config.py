@@ -17,6 +17,19 @@ SEGMENTATION_METHOD = os.getenv("SEGMENTATION_METHOD", "geometric")
 EMERGENCY_NUMBER = os.getenv("EMERGENCY_NUMBER", "112")
 SEED_DEMO = os.getenv("SEED_DEMO", "1") == "1"
 
+# AI assistant (Claude). "auto": on when ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN is set; "1": always on (e.g. with
+# an `ant auth login` profile); "0": off. Without it the keyword assistant answers.
+AI_ENABLED = os.getenv("AI_ENABLED", "auto").strip().lower()
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
+ANTHROPIC_AUTH_TOKEN = os.getenv("ANTHROPIC_AUTH_TOKEN")
+AI_MODEL = os.getenv("AI_MODEL", "claude-opus-5-5")
+AI_EFFORT = os.getenv("AI_EFFORT", "low")
+AI_TIMEOUT = float(os.getenv("AI_TIMEOUT", "60"))
+
+# MCP server: browser Origins allowed to call /mcp (requests without an Origin header, e.g. desktop clients, are
+# always allowed). Comma-separated hostnames.
+MCP_ALLOWED_ORIGINS = [h.strip() for h in os.getenv("MCP_ALLOWED_ORIGINS", "localhost,127.0.0.1").split(",") if h.strip()]
+
 # Automatic inspection reminders (certificates, services, verification checks). Items due within
 # INSPECTION_WINDOW_DAYS are notified; the background check runs every INSPECTION_CHECK_HOURS (0 = off).
 INSPECTION_WINDOW_DAYS = int(os.getenv("INSPECTION_WINDOW_DAYS", "14"))

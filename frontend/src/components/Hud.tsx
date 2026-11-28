@@ -315,34 +315,58 @@ function ViewportControls() {
   )
 }
 
+interface AssistantReply {
+  answer: string; highlight: string | null; material?: string; point?: string
+  enabled?: boolean; documents?: { document_id: number; title: string }[]; tools?: string[]
+}
+type Turn = { role: 'user' | 'assistant'; content: string }
+
 function Assistant() {
   const { lab, focus, set, chatOpen, sideOpen } = useLab()
   const t = useT()
   const [q, setQ] = useState('')
-  const [answer, setAnswer] = useState<string | null>(null)
+  const [reply, setReply] = useState<AssistantReply | null>(null)
+  const [history, setHistory] = useState<Turn[]>([])
   const [busy, setBusy] = useState(false)
+  const reset = () => { setReply(null); setHistory([]) }
   const ask = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!q.trim() || !lab) return
+    const question = q.trim()
+    if (!question || !lab) return
     setBusy(true)
     try {
-      const r = await api.post<{ answer: string; highlight: string | null; material?: string; point?: string }>(
-        '/assistant', { lab_id: lab.id, question: q })
-      setAnswer(r.answer)
+      const r = await api.post<AssistantReply>('/assistant/ai', { lab_id: lab.id, question, history })
+      setReply(r)
+      setQ('')
+      setHistory(r.enabled ? [...history, { role: 'user' as const, content: question }, { role: 'assistant' as const, content: r.answer }].slice(-8) : [])
       if (r.highlight) focus(r.highlight)
       if (r.point) set({ layer: 'safety' })
       if (r.material) set({ layer: 'inventory' })
+    } catch (err) {
+      setReply({ answer: t('assistant.error', { error: String((err as Error).message ?? err) }), highlight: null })
     } finally {
       setBusy(false)
     }
   }
   return (
     <div className={cn('pointer-events-auto absolute bottom-4 left-1/2 z-20 w-[min(440px,calc(100vw-2rem))] -translate-x-1/2', (chatOpen || sideOpen) && 'max-lg:hidden', sideOpen && !chatOpen && 'lg:left-[calc(50%-200px)]', chatOpen && !sideOpen && 'lg:left-[calc(50%+190px)]', chatOpen && sideOpen && 'max-2xl:hidden')}>
-      {answer && (
-        <div className="mb-2 flex items-start gap-2 rounded-xl border border-line bg-surface/95 p-3 text-sm backdrop-blur">
-          <Sparkles className="mt-0.5 size-4 shrink-0 text-accent" />
-          <p className="flex-1">{answer}</p>
-          <button onClick={() => setAnswer(null)} className="cursor-pointer text-dim hover:text-fg"><X className="size-4" /></button>
+      {(reply || busy) && (
+        <div className="mb-2 rounded-xl border border-line bg-surface/95 p-3 text-sm backdrop-blur">
+          <div className="flex items-start gap-2">
+            <Sparkles className={cn('mt-0.5 size-4 shrink-0 text-accent', busy && 'animate-pulse')} />
+            <p className="max-h-[40vh] flex-1 overflow-y-auto whitespace-pre-line">{busy ? t('assistant.thinking') : reply?.answer}</p>
+            <button onClick={reset} className="cursor-pointer text-dim hover:text-fg" aria-label={t('assistant.close')}><X className="size-4" /></button>
+          </div>
+          {!busy && reply && (
+            <div className="mt-2 flex flex-wrap items-center gap-1.5 pl-6 text-[11px] text-dim">
+              {reply.enabled && <span className="rounded border border-accent/50 px-1.5 py-0.5 font-mono font-semibold text-accent">AI</span>}
+              {reply.documents?.slice(0, 3).map((d) => (
+                <a key={d.document_id} href={`/api/documents/${d.document_id}/download`} target="_blank" rel="noreferrer"
+                  className="max-w-[180px] truncate rounded border border-line px-1.5 py-0.5 hover:text-fg">{d.title}</a>
+              ))}
+              {history.length > 0 && <span className="ml-auto">{t('assistant.followUp')}</span>}
+            </div>
+          )}
         </div>
       )}
       <form onSubmit={ask} className="flex items-center gap-2 rounded-full border border-line-strong bg-surface/95 py-1.5 pl-4 pr-1.5 backdrop-blur">

@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .config import SEED_DEMO
 from .db import init_db
 from .realtime import hub
-from .routers import admin, assets, documents, incidents, labs, optional, quests, social, spatial
+from .routers import admin, assets, documents, incidents, labs, mcp, quests, social, spatial
 from .seed import seed
 from .services import inspections
 
@@ -16,7 +16,7 @@ logging.basicConfig(level=logging.INFO)
 app = FastAPI(title="SMARTLAB Digital Twin API", version="0.2.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
-for r in (labs, assets, quests, social, incidents, admin, documents, spatial, optional):
+for r in (labs, assets, quests, social, incidents, admin, documents, spatial, mcp):
     app.include_router(r.router)
 
 
