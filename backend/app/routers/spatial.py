@@ -6,7 +6,7 @@ from ..db import Document, Equipment, Lab, Quest, Reconstruction, SessionLocal, 
 from ..deps import current_user, get_db, require, ser
 from ..i18n import DEFAULT_LANG, get_lang, tr
 from ..realtime import hub
-from ..services import segmentation, spatial
+from ..services import ai, segmentation, spatial
 from ..services.assets import lab_assets, log
 from ..services.assistant import ask_assistant
 from ..services.documents import store_upload
@@ -45,6 +45,28 @@ class AskIn(BaseModel):
 @router.post("/assistant")
 def assistant(body: AskIn, db: Session = Depends(get_db), lang: str = Depends(get_lang)):
     return ask_assistant(db, body.lab_id, body.question, lang)
+
+
+class AskAiIn(AskIn):
+    history: list[dict] = []
+    user_id: str | None = None
+
+
+@router.get("/assistant/status")
+def assistant_status():
+    return ai.status()
+
+
+@router.post("/assistant/ai")
+def assistant_ai(body: AskAiIn, db: Session = Depends(get_db), user: User | None = Depends(current_user),
+                 lang: str = Depends(get_lang)):
+    if not db.get(Lab, body.lab_id):
+        raise HTTPException(404, "Lab not found")
+    user = user or (db.get(User, body.user_id) if body.user_id else None)
+    answer = ai.ask(db, body.lab_id, body.question, user, lang, body.history)
+    if answer is None:
+        return {**ask_assistant(db, body.lab_id, body.question, lang), "enabled": False, "fallback": "keyword"}
+    return answer
 
 
 def run_reconstruction(rec_id: int):
