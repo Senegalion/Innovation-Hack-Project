@@ -1,6 +1,6 @@
 import {
   AlertOctagon, ArrowRight, BookOpen, Camera, Crosshair, History, ImagePlus, Info, MessageSquare, Navigation,
-  Printer, QrCode, ShieldAlert, Sparkles, TestTube, TriangleAlert, UserRoundSearch,
+  Nfc, Printer, QrCode, ShieldAlert, Sparkles, TestTube, TriangleAlert, UserRoundSearch,
 } from 'lucide-react'
 import { QRCodeSVG } from 'qrcode.react'
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -17,6 +17,7 @@ import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { api } from '@/lib/api'
 import { t as tr, tx, useLang, useT } from '@/lib/i18n'
+import { nfcNeedsHttps, nfcSupported, readNfc, writeNfc } from '@/lib/nfc'
 import { cn, daysUntil, fmtDate, fmtTime } from '@/lib/utils'
 import { useLab } from '@/store'
 import type { EquipmentDetail, LogEntry, MaterialDetail, Message, Onboarding, Procedure, Route, Sample } from '@/types'
@@ -256,6 +257,7 @@ function EquipmentDialog() {
                     <div className="rounded-md bg-white p-1.5"><QRCodeSVG value={`${location.origin}/?scan=${d.id}`} size={76} /></div>
                     <div className="flex-1 text-xs text-dim"><p className="font-medium text-fg">{t('eq.qrTitle')}</p>{t('eq.qrText')}</div>
                     <Button size="sm" variant="ghost" onClick={() => window.open(`/api/qr/${d.id}.svg?base_url=${encodeURIComponent(location.origin)}&scale=10`, '_blank')}><Printer /></Button>
+                    <NfcWriteButton code={d.id} />
                   </div>
                 </TabsContent>
                 <TabsContent value="history" className="space-y-4">
@@ -371,8 +373,9 @@ function MaterialDialog() {
             <div className="border-b border-line p-5 pr-14">
               <p className="font-mono text-xs text-dim">{t('mat.cas')} {d.cas} · {t('mat.cat')} {d.catalog_no} · {t('mat.lot')} {d.lot}</p>
               <DialogTitle className="mt-1 font-display text-xl font-semibold">{d.name}</DialogTitle>
-              <div className="mt-2 flex flex-wrap gap-1.5">
+              <div className="mt-2 flex flex-wrap items-center gap-1.5">
                 {d.hazards.map((h) => <Badge key={h}>{h}</Badge>)}
+                <NfcWriteButton code={d.id} className="h-6 px-1.5" />
                 {!d.sds && <Badge variant="accent">{t('stock.sdsMissing')}</Badge>}
                 {f.alerts.includes('wrong_location') && <Badge variant="accent">{t('stock.wrongLocation')}</Badge>}
                 {f.alerts.includes('quantity_mismatch') && <Badge variant="accent">{t('stock.mismatch')}</Badge>}
@@ -488,7 +491,10 @@ function SampleDialog() {
                 <p className="font-mono text-xs text-accent">{d.id}</p>
                 <DialogTitle className="flex items-center gap-2 font-display text-xl font-semibold"><TestTube className="size-5 text-accent" />{d.label}</DialogTitle>
                 <p className="mt-1 text-sm text-dim">{d.status}</p>
-                <Button size="sm" variant="ghost" className="mt-1 px-0" onClick={() => window.open(qr.replace('scale=8', 'scale=14'), '_blank')}><Printer /> {t('sample.printLabel')}</Button>
+                <div className="flex flex-wrap gap-3">
+                  <Button size="sm" variant="ghost" className="mt-1 px-0" onClick={() => window.open(qr.replace('scale=8', 'scale=14'), '_blank')}><Printer /> {t('sample.printLabel')}</Button>
+                  <NfcWriteButton code={d.id} className="mt-1 px-0" />
+                </div>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-2">
@@ -609,6 +615,42 @@ declare global {
   interface Window { BarcodeDetector?: new (o: { formats: string[] }) => { detect: (v: HTMLVideoElement) => Promise<{ rawValue: string }[]> } }
 }
 
+export function NfcWriteButton({ code, className }: { code: string; className?: string }) {
+  const s = useLab()
+  const t = useT()
+  const [busy, setBusy] = useState(false)
+  if (!nfcSupported()) return null
+  const write = async () => {
+    const ctrl = new AbortController()
+    const timer = setTimeout(() => ctrl.abort(), 20000)
+    setBusy(true)
+    s.toast(t('nfc.writeHold', { id: code }), 'plain')
+    try {
+      await writeNfc(code, ctrl.signal)
+      s.toast(t('nfc.written', { id: code }))
+    } catch (e) {
+      s.toast(t('nfc.writeError', { error: (e as Error).name === 'AbortError' ? t('nfc.timeout') : (e as Error).message }), 'plain')
+    } finally {
+      clearTimeout(timer)
+      setBusy(false)
+    }
+  }
+  return (
+    <Button size="sm" variant="ghost" className={className} onClick={write} disabled={busy} title={t('nfc.write')}>
+      <Nfc className={cn(busy && 'animate-pulse text-accent')} /> {t('nfc.writeShort')}
+    </Button>
+  )
+}
+
+export async function resolveNfc(tag: { serial: string; records: string[] }) {
+  try {
+    const r = await api.post<{ code: string }>(`/nfc/${encodeURIComponent(tag.serial || 'unknown')}`, { records: tag.records })
+    await resolveCode(r.code)
+  } catch (e) {
+    useLab.getState().toast((e as Error).message, 'plain')
+  }
+}
+
 export async function resolveCode(raw: string) {
   const s = useLab.getState()
   const code = (raw.includes('scan=') ? new URL(raw, location.origin).searchParams.get('scan') ?? raw : raw).trim()
@@ -632,8 +674,17 @@ function ScanDialog() {
   const t = useT()
   const [code, setCode] = useState('')
   const [cam, setCam] = useState(false)
+  const [nfc, setNfc] = useState(false)
   const video = useRef<HTMLVideoElement>(null)
   const supported = typeof window !== 'undefined' && !!window.BarcodeDetector
+
+  useEffect(() => {
+    if (!nfc || !s.scanOpen) return
+    const ctrl = new AbortController()
+    readNfc(ctrl.signal, (tag) => { ctrl.abort(); setNfc(false); resolveNfc(tag) }, () => s.toast(tr('nfc.readError'), 'plain'))
+      .catch((e) => { if ((e as Error).name !== 'AbortError') { s.toast(tr('nfc.readError'), 'plain'); setNfc(false) } })
+    return () => ctrl.abort()
+  }, [nfc, s.scanOpen])
 
   useEffect(() => {
     if (!cam || !s.scanOpen) return
@@ -660,7 +711,7 @@ function ScanDialog() {
   }, [cam, s.scanOpen])
 
   return (
-    <Dialog open={s.scanOpen} onOpenChange={(o) => { s.set({ scanOpen: o }); if (!o) setCam(false) }}>
+    <Dialog open={s.scanOpen} onOpenChange={(o) => { s.set({ scanOpen: o }); if (!o) { setCam(false); setNfc(false) } }}>
       <DialogContent className="w-[min(440px,94vw)]">
         <div className="space-y-4 p-5">
           <DialogTitle className="flex items-center gap-2 font-display text-lg font-semibold"><QrCode className="size-5 text-accent" /> {t('scan.title')}</DialogTitle>
@@ -670,6 +721,13 @@ function ScanDialog() {
             <Button variant="subtle" className="w-full" onClick={() => setCam(true)} disabled={!supported}>
               <Camera /> {supported ? t('scan.camera') : t('scan.unsupported')}
             </Button>
+          )}
+          {nfcSupported() ? (
+            <Button variant={nfc ? 'default' : 'subtle'} className="w-full" onClick={() => setNfc(!nfc)}>
+              <Nfc className={cn(nfc && 'animate-pulse')} /> {nfc ? t('nfc.waiting') : t('nfc.read')}
+            </Button>
+          ) : (
+            <p className="text-xs text-muted">{nfcNeedsHttps() ? t('nfc.needsHttps') : t('nfc.unsupported')}</p>
           )}
           <form onSubmit={(e) => { e.preventDefault(); resolveCode(code) }} className="flex gap-2">
             <Input value={code} onChange={(e) => setCode(e.target.value)} placeholder={t('scan.placeholder')} autoFocus />

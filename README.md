@@ -16,9 +16,10 @@ WITH_DOCLING=1 docker compose up --build       # also installs Docling for PDF p
 ```bash
 cd backend && python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
 .venv/bin/uvicorn app.main:app --reload --port 8000
-.venv/bin/pytest                               # 24 end-to-end API tests
+.venv/bin/pytest                               # end-to-end API tests
 
 cd frontend && npm install && npm run dev      # http://localhost:5173 (proxies /api and /ws to 127.0.0.1:8000)
+npm run dev:https                              # same over HTTPS (self-signed) for phones: camera QR + NFC
 ```
 Every external service is optional and has a fallback. Without `S3_ENDPOINT`, files go to `backend/data/files`. Without `QDRANT_URL`, search runs in the database. Without Docling, PDFs are parsed with pypdf. Without `SEGMENTATION_URL`, segmentation uses the built-in geometric method. The demo data is seeded on first start, with dates relative to today. Delete `backend/smartlab.db` and `backend/data` (or run `docker compose down -v`) to reset it.
 The UI is **Polish by default**. The PL | EN switch in the header changes the interface, and the backend renders system-generated text (quests, suggestions, Smart Help, routes, assistant, onboarding, emergency steps) in the language from the `Accept-Language` header. Text that people type (names, notes, messages) is shown as written. The demo data is in Polish.
@@ -44,6 +45,7 @@ backend/app/
 | **2D floor plan from 3D maps** | `POST /api/labs/{id}/floorplan/from-model` (GLB/OBJ/PLY/XYZ → occupancy grid by height band). `GET …/floorplan?format=svg`. Export the twin as `…/export/model.glb` (for Blender) or a synthetic `…/export/pointcloud.ply` | |
 | **Semantic + instance segmentation** | `POST /api/labs/{id}/reconstructions` with `method=geometric\|sam3d\|openpcseg`. The geometric method splits objects by height, labels them (bench / instrument / cabinet / fume hood / wall) and matches them to known assets. SAM-3D / OpenPCSeg go through an external service at `SEGMENTATION_URL`, with geometric as the fallback. `POST /api/reconstructions/{id}/accept` turns a detected object into a new asset | |
 | Optimal route with restrictions and task time | `POST /api/route` with `stops` or `quest_ids`. A* adds extra cost in hazard zones, blocks closed areas, and blocks restricted areas for roles not on the access list. It returns per-stop arrival and work times plus a list of unreachable stops | "Plan optimal route" |
+| **NFC tags** | `POST /api/nfc/{tag_serial}` with the tag's NDEF `records`: a URL with `?scan=ID` or a plain ID is resolved like a QR scan (logged as a scan, returns the quests at that spot); the tag serial is tried last | Scan dialog "Tap an NFC tag", "NFC tag" button on device, reagent and sample cards writes a tag |
 | QR / manual ID (stations, reagents, tubes) | `GET /api/scan/{code}` (also returns the quests at that location), `GET /api/qr/{code}.svg`, samples CRUD + history | Scan dialog, card QR |
 | Equipment: verification date + uncertainty, service, certificate, last user / servicer, logs, notes | `POST /api/equipment/{id}/logs` (a reading outside the uncertainty raises an alert and an incident). Predicts the next failure from past failure intervals, and the next inspection date | Equipment card |
 | Materials: expiry, forecast → order-by date, logs, notes | Forecast from planned experiments, plus checks for wrong storage (storage class), count mismatches, missing SDS and waste risk in €. Actions: take / restock / check / move / dispose / use-before-expiry | Stock tab, reagent card |
@@ -62,8 +64,6 @@ backend/app/
 | Assistant "where is…?" (EN/PL) | `POST /api/assistant`: matches devices, reagents, samples, spaces and safety points, and adds relevant documentation snippets | Bottom search bar |
 | **AI assistant (Claude)** | `POST /api/assistant/ai` (`lab_id`, `question`, optional `history`): Claude answers using read-only lab tools (find in lab, search documents, device and reagent cards, alerts, Smart Help, knowledge base, incidents, my quests). Falls back to the keyword assistant when no API key is set or the API fails. `GET /api/assistant/status` | Bottom search bar (AI badge, document links, follow-up questions) |
 | **MCP server** | `POST /mcp` (Streamable HTTP, JSON-RPC). The same read-only tools plus `list_labs`, for Claude Desktop, Claude Code or any MCP client. `GET /api/mcp/tools` lists them | |
-
-**Optional features (stubs that return `{"enabled": false}`, never an exception):** NFC tags (`POST /api/nfc/{tag}`, which points to `/api/scan`).
 
 ## AI assistant and MCP
 Export `ANTHROPIC_API_KEY` before starting the backend (Docker Compose also reads it from `.env` in the repo root). The bottom search bar then answers with Claude (model `claude-opus-5-5`, change with `AI_MODEL`; `AI_EFFORT=low` keeps answers fast). Without a key, or if the API call fails, the keyword assistant answers as before. `AI_ENABLED=0` turns AI off, `AI_ENABLED=1` forces it on when credentials come from an `ant auth login` profile.
@@ -114,3 +114,10 @@ API: `POST /api/labs`, `POST|DELETE /api/labs/{id}/model`, `PUT /api/labs/{id}/s
 - Only 26% get safety training within 30 days of starting. Only 68% of labs document near-misses. 25% can't find required training (Pinhas et al. 2026).
 
 These are self-reported, perception-level data, not hard accident statistics.
+
+## NFC tags (phones)
+Web NFC works in **Chrome on Android** and only over **HTTPS**. For a phone on the same Wi-Fi run `npm run dev:https` and open `https://<laptop-ip>:5173` (accept the self-signed certificate once).
+
+- **Write a tag:** open a device, reagent or sample card, tap **NFC tag** and hold a blank NTAG sticker to the phone. The tag gets two records: `https://<host>/?scan=<ID>` and the plain ID.
+- **Read a tag:** in the app, open **Scan** → **Tap an NFC tag**. With the app closed, Android opens the URL on the tag and the app jumps to that card (same `?scan=` link as the QR codes).
+- Any tag whose text is an ID (`HPLC-04`, `MAT-ACN`, `SMP-0001`) works too, so tags can also be programmed with any NFC writer app.
