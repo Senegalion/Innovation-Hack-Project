@@ -1,4 +1,5 @@
 from datetime import date, timedelta
+from urllib.parse import parse_qs, urlparse
 
 import segno
 from fastapi import APIRouter, Depends, HTTPException
@@ -365,6 +366,36 @@ def scan(code: str, db: Session = Depends(get_db), user: User | None = Depends(c
         return {"type": "sample", "id": s.id, "lab_id": s.lab_id, "sample": ser(s), "location": s.location_id,
                 "owner": name_of(db, s.owner_id)}
     raise HTTPException(404, f"No object with ID {code}")
+
+
+class NfcIn(BaseModel):
+    records: list[str] = []
+
+
+def nfc_candidates(tag_id: str, records: list[str]) -> list[str]:
+    out = []
+    for r in records:
+        r = r.strip()
+        if "scan=" in r:
+            r = parse_qs(urlparse(r).query).get("scan", [r.split("scan=", 1)[1]])[0]
+        if r and r not in out:
+            out.append(r)
+    if tag_id not in out:
+        out.append(tag_id)
+    return out
+
+
+@router.post("/nfc/{tag_id}")
+def nfc(tag_id: str, body: NfcIn | None = None, db: Session = Depends(get_db),
+        user: User | None = Depends(current_user)):
+    """Resolve an NFC tag: its NDEF records (URL with ?scan=ID or plain ID) first, then the tag ID itself."""
+    for code in nfc_candidates(tag_id, body.records if body else []):
+        try:
+            return {"enabled": True, "via": "nfc", "tag_id": tag_id, "code": code.strip().upper(),
+                    **scan(code, db, user)}
+        except HTTPException:
+            continue
+    raise HTTPException(404, f"NFC tag {tag_id} is not linked to any station, reagent or sample")
 
 
 @router.get("/qr/{code}.svg")

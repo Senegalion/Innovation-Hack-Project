@@ -233,10 +233,21 @@ def test_custom_lab_from_3d_model(c):
 
 
 def test_optional_stubs_do_not_fail(c):
-    for method, url in [("post", "/api/assistant/ai"), ("get", "/mcp"),
-                        ("get", "/api/mcp/tools"), ("post", "/api/nfc/TAG1")]:
+    for method, url in [("post", "/api/assistant/ai"), ("get", "/mcp"), ("get", "/api/mcp/tools")]:
         r = getattr(c, method)(url)
         assert r.status_code == 200 and r.json()["enabled"] is False
+
+
+def test_nfc_tags_resolve_records_and_tag_id(c):
+    r = c.post("/api/nfc/04:A2:19:7F", json={"records": ["https://lab.example/?scan=HPLC-04", "HPLC-04"]},
+               headers=INTERN).json()
+    assert r["enabled"] and r["via"] == "nfc" and r["type"] == "equipment" and r["id"] == "HPLC-04"
+    assert any(q["title"] for q in r["quests"]) or r["quests"] == []
+    assert c.post("/api/nfc/x", json={"records": ["mat-acn"]}).json()["id"] == "MAT-ACN"
+    assert c.post("/api/nfc/SMP-0001").json()["type"] == "sample"
+    assert c.post("/api/nfc/04:FF", json={"records": ["https://lab.example/?scan=NOPE", "hello"]}).status_code == 404
+    hist = c.get("/api/equipment/HPLC-04").json()["logs"]
+    assert any(l["kind"] == "scan" and l["user"] == "Tomek Lewandowski" for l in hist)
 
 
 def test_inspection_reminders(c):
