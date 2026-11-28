@@ -1,5 +1,5 @@
 import {
-  Box, Building2, Download, Leaf, LayoutDashboard, MapPin, Plus, ScanLine, ShieldAlert, Trash2, Trophy, Upload, Users,
+  BellRing, Box, Building2, CalendarClock, Download, Leaf, LayoutDashboard, MapPin, Plus, ScanLine, ShieldAlert, Trash2, Trophy, Upload, Users,
 } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { roleLabel } from '@/components/Hud'
@@ -62,6 +62,51 @@ function Section({ title, icon, children, className }: { title: string; icon?: R
   )
 }
 
+interface DueInspection {
+  equipment_id: string; name: string; kind: 'certificate' | 'service' | 'verification'; due: string
+  days_left: number; overdue: boolean; responsible: string | null; title: string
+}
+
+function Inspections() {
+  const s = useLab()
+  const t = useT()
+  const run = useAction()
+  const lang = useLang((x) => x.lang)
+  const [items, setItems] = useState<DueInspection[] | null>(null)
+  const load = useCallback(() => {
+    api.get<{ items: DueInspection[] }>(`/notifications/inspections?lab_id=${s.labId}`).then((r) => setItems(r.items)).catch(() => setItems([]))
+  }, [s.labId, lang])
+  useEffect(() => { load() }, [load, s.lab])
+  const send = async () => {
+    const r = await run(() => api.post<{ notifications: number }>(`/notifications/inspections/run?lab_id=${s.labId}`, {}))
+    if (r) s.toast(r.notifications ? t('insp.sent', { n: r.notifications }) : t('insp.nothingNew'))
+    s.loadNotifications()
+  }
+  return (
+    <Section title={t('insp.title')} icon={<CalendarClock className="size-4 text-accent" />} className="md:col-span-2">
+      {items === null && <p className="text-xs text-muted">{t('common.loading')}</p>}
+      {items?.length === 0 && <p className="text-xs text-muted">{t('insp.none')}</p>}
+      <div className="space-y-1.5">
+        {items?.map((i) => (
+          <button key={`${i.equipment_id}-${i.kind}`} onClick={() => { s.set({ adminOpen: false }); s.focus(i.equipment_id, true) }}
+            className="flex w-full cursor-pointer items-center gap-2 rounded-lg border border-line px-2.5 py-2 text-left text-xs hover:bg-hover">
+            <Badge variant={i.overdue ? 'solid' : i.days_left <= 3 ? 'accent' : 'default'}>{t(`insp.kind.${i.kind}`)}</Badge>
+            <span className="min-w-0 flex-1 truncate">{i.name}</span>
+            <span className="hidden text-dim sm:inline">{i.responsible ?? '—'}</span>
+            <span className={cn('font-mono', i.overdue || i.days_left <= 3 ? 'text-accent' : 'text-dim')}>
+              {i.overdue ? t('insp.overdueShort', { n: -i.days_left }) : i.days_left === 0 ? t('insp.todayShort') : t('insp.inDays', { n: i.days_left })}
+            </span>
+          </button>
+        ))}
+      </div>
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+        <p className="text-[11px] text-muted">{t('insp.auto')}</p>
+        <Button size="sm" variant="subtle" onClick={send} disabled={!items?.length}><BellRing /> {t('insp.send')}</Button>
+      </div>
+    </Section>
+  )
+}
+
 function Overview() {
   const s = useLab()
   const t = useT()
@@ -96,6 +141,7 @@ function Overview() {
           </div>
         ))}
       </div>
+      <Inspections />
       <Section title={t('admin.escalations')} icon={<ShieldAlert className="size-4 text-accent" />} className="md:col-span-2">
         {open.length === 0 && <p className="text-xs text-muted">{t('admin.nothingOpen')}</p>}
         <div className="space-y-2">

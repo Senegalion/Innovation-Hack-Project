@@ -10,11 +10,6 @@ def ai_assistant():
     return {**NOT_ENABLED, "feature": "AI assistant over documentation", "fallback": "/api/documents/search"}
 
 
-@router.get("/api/notifications/inspections")
-def inspection_notifications():
-    return {**NOT_ENABLED, "feature": "Automatic inspection notifications", "items": []}
-
-
 @router.get("/mcp")
 @router.post("/mcp")
 def mcp_endpoint():
